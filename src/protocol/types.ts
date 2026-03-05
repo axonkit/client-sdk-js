@@ -205,6 +205,7 @@ export interface JoinResponse {
   pingTimeout: number;
   pingInterval: number;
   serverInfo: ServerInfo;
+  iceServers: RTCIceServer[];
   sendTransport: TransportParams;
   receiveTransport: TransportParams;
   signal: SignalChannels;

@@ -6,13 +6,13 @@ const log = getLogger('SignalClient');
 
 export interface JoinResult {
   response: JoinResponse;
-  nodeId: string;
   logId: string;
 }
 
 export class SignalClient {
   private nodeId = '';
   private logId = '';
+  private token = '';
 
   get currentNodeId(): string {
     return this.nodeId;
@@ -26,12 +26,17 @@ export class SignalClient {
     const endpoint = `${url}/rtc/join`;
     log.info(`Joining room at ${endpoint}`);
 
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+    if (this.nodeId) {
+      headers['X-Node-Id'] = this.nodeId;
+    }
+
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify(request),
     });
 
@@ -43,13 +48,14 @@ export class SignalClient {
       );
     }
 
-    this.nodeId = resp.headers.get('X-Node-Id') ?? '';
-    this.logId = resp.headers.get('X-Log-Id') ?? '';
-
     const response = (await resp.json()) as JoinResponse;
 
+    this.nodeId = response.serverInfo.nodeId;
+    this.logId = resp.headers.get('X-Log-Id') ?? '';
+    this.token = token;
+
     log.info(`Joined room ${response.room.name}, nodeId=${this.nodeId}`);
-    return { response, nodeId: this.nodeId, logId: this.logId };
+    return { response, logId: this.logId };
   }
 
   async connect(url: string, request: ConnectRequest): Promise<void> {
@@ -58,7 +64,11 @@ export class SignalClient {
 
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.token}`,
+        'X-Node-Id': this.nodeId,
+      },
       body: JSON.stringify(request),
     });
 

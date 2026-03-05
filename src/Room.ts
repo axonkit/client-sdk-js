@@ -36,7 +36,13 @@ import {
   type ActiveSpeaker,
 } from './protocol/types';
 import type { RoomOptions, ReconnectPolicy } from './track/options';
+import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
+
+export interface ConnectOptions {
+  displayName?: string;
+  roomName?: string;
+}
 
 const log = getLogger('Room');
 
@@ -132,7 +138,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   // --- Connect ---
 
-  async connect(url: string, token: string): Promise<void> {
+  async connect(url: string, token: string, options?: ConnectOptions): Promise<void> {
     if (this._state !== RoomState.Disconnected) {
       throw new Error(`Cannot connect: room state is ${this._state}`);
     }
@@ -142,34 +148,34 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this._state = RoomState.Connecting;
 
     try {
-      // 1. Build JoinRequest
+      // 1. Generate certificate and get DTLS fingerprints
+      const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
+      const hasDtlsFingerprints = fingerprints.length > 0;
+
+      // 2. Build JoinRequest
       const joinRequest: JoinRequest = {
-        displayName: '',
-        room: { name: '' },
+        displayName: options?.displayName ?? '',
+        room: { name: options?.roomName ?? '' },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
           autoSubscribe: this._options.autoSubscribe !== false,
           adaptiveStream: this._options.adaptiveStream === true,
+          dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
         },
         reconnect: false,
         participantSid: '',
         nodeId: '',
       };
 
-      // 2. HTTP Join
-      const { response: joinResponse, nodeId } = await this.signalClient.join(url, token, joinRequest);
-      this.nodeId = nodeId || joinResponse.serverInfo.nodeId;
+      // 3. HTTP Join
+      const { response: joinResponse } = await this.signalClient.join(url, token, joinRequest);
+      this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
 
-      // 3. Setup transports + signal DataChannels
-      await this.transportManager.setup(url, joinResponse, false);
+      // 4. Setup transports + signal DataChannels
+      await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints);
 
-      // 4. Bind RPC to DataChannels
-      this.transportManager.on('signalReady', (sendDC, recvDC) => {
-        this.rpcClient.bind(sendDC, recvDC);
-      });
-
-      // Wait for signal DataChannels if not already ready
+      // 5. Bind RPC to DataChannels
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
         this.rpcClient.bind(
           this.transportManager.signalDataProducer,
@@ -177,17 +183,17 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         );
       }
 
-      // 5. Register handlers
+      // 6. Register handlers
       this.registerRPCHandlers();
       this.registerNotificationHandlers();
 
-      // 6. Send ready RPC
+      // 7. Send ready RPC
       const readyReq: ReadyRequest = {
-        rtpCapabilities: this.transportManager.device.rtpCapabilities,
+        rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
       };
       const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
 
-      // 7. Initialize remote participants
+      // 8. Initialize remote participants
       if (readyResp?.otherParticipants) {
         for (const info of readyResp.otherParticipants) {
           const rp = RemoteParticipant.fromInfo(info);
@@ -197,10 +203,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         }
       }
 
-      // 8. Start heartbeat
+      // 9. Start heartbeat
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
 
-      // 9. Set state to connected
+      // 10. Set state to connected
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
       this.emit('connected');
@@ -212,6 +218,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       }
     } catch (err) {
       this._state = RoomState.Disconnected;
+      this.transportManager.close();
       throw err;
     }
   }
@@ -280,8 +287,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.rpcClient = new RPCClient();
       this.transportManager = new TransportManager(this.signalClient);
 
-      const { response: jr, nodeId } = await this.signalClient.join(this.url, this.token, joinRequest);
-      this.nodeId = nodeId || jr.serverInfo.nodeId;
+      const { response: jr } = await this.signalClient.join(this.url, this.token, joinRequest);
+      this.nodeId = jr.serverInfo.nodeId;
       this.applyJoinResponse(jr);
 
       await this.transportManager.setup(this.url, jr, false);
@@ -299,7 +306,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this._localParticipant.init(this.rpcClient, this.transportManager);
 
       const readyReq: ReadyRequest = {
-        rtpCapabilities: this.transportManager.device.rtpCapabilities,
+        rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
       };
       await this.rpcClient.request<ReadyResponse>('ready', readyReq);
 

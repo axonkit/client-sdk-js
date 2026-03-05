@@ -221,7 +221,7 @@
 
         try {
           logMsg("Connecting...");
-          await room.connect(url, token);
+          await room.connect(url, token, {displayName: "John Doe", roomName: "TestRoom"});
           logMsg(`Connected to room: ${room.name}`);
           $("btnConnect").disabled = true;
           $("btnDisconnect").disabled = false;

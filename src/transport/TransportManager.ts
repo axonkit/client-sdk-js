@@ -7,6 +7,7 @@ import type {
   JoinResponse,
   ConnectRequest,
   TransportConnectInfo,
+  DtlsFingerprint,
 } from '../protocol/types';
 
 const log = getLogger('TransportManager');
@@ -39,11 +40,32 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
   private signalClient: SignalClient;
   private hasDtlsFingerprints = false;
   private joinResponse: JoinResponse | null = null;
+  private certificate: RTCCertificate | null = null;
 
   constructor(signalClient: SignalClient) {
     super();
     this.device = new mediasoupClient.Device();
     this.signalClient = signalClient;
+  }
+
+  async generateCertificate(): Promise<DtlsFingerprint[]> {
+    try {
+      const cert = await RTCPeerConnection.generateCertificate({
+        name: 'ECDSA',
+        namedCurve: 'P-256',
+      } as EcKeyGenParams);
+      this.certificate = cert;
+
+      const fingerprints: DtlsFingerprint[] = cert.getFingerprints().map((fp) => ({
+        algorithm: fp.algorithm ?? '',
+        value: fp.value?.toUpperCase() ?? '',
+      }));
+      log.info(`Generated certificate with ${fingerprints.length} fingerprint(s)`);
+      return fingerprints;
+    } catch (err) {
+      log.warn('Failed to generate certificate, falling back to auto-generated', err);
+      return [];
+    }
   }
 
   async setup(
@@ -61,6 +83,11 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     });
     log.info('Device loaded with RTP capabilities');
 
+    const additionalSettings: Partial<RTCConfiguration> = {};
+    if (this.certificate) {
+      additionalSettings.certificates = [this.certificate];
+    }
+
     // 2. Create send transport
     this.sendTransport = this.device.createSendTransport({
       id: joinResponse.sendTransport.sid,
@@ -68,7 +95,8 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       iceCandidates: joinResponse.sendTransport.iceCandidates as unknown as mediasoupTypes.IceCandidate[],
       dtlsParameters: joinResponse.sendTransport.dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
       sctpParameters: joinResponse.sendTransport.sctpParameters as unknown as mediasoupTypes.SctpParameters,
-      iceServers: [],
+      iceServers: joinResponse.iceServers,
+      additionalSettings,
     });
     log.info(`Send transport created: ${this.sendTransport.id}`);
 
@@ -79,13 +107,12 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       iceCandidates: joinResponse.receiveTransport.iceCandidates as unknown as mediasoupTypes.IceCandidate[],
       dtlsParameters: joinResponse.receiveTransport.dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
       sctpParameters: joinResponse.receiveTransport.sctpParameters as unknown as mediasoupTypes.SctpParameters,
-      iceServers: [],
+      iceServers: joinResponse.iceServers,
+      additionalSettings,
     });
     log.info(`Recv transport created: ${this.recvTransport.id}`);
 
     this.setupTransportEvents();
-
-    // 5. Establish signal DataChannels
     await this.setupSignalChannels(joinResponse);
   }
 
@@ -187,6 +214,60 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     this.signalDataProducer = await this.sendTransport!.produceData(produceDataOptions);
     log.info('Signal send DataChannel established');
 
+    await Promise.all([
+      this.waitForDataChannelOpen(this.signalDataProducer, 'signalDataProducer'),
+      this.waitForDataChannelOpen(this.signalDataConsumer, 'signalDataConsumer'),
+    ]);
+
     this.emit('signalReady', this.signalDataProducer, this.signalDataConsumer);
+  }
+
+  private static readonly DC_OPEN_TIMEOUT = 10_000;
+
+  private waitForDataChannelOpen(
+    dc: mediasoupTypes.DataProducer | mediasoupTypes.DataConsumer,
+    label: string,
+  ): Promise<void> {
+    const state = dc.readyState;
+    if (state === 'open') {
+      return Promise.resolve();
+    }
+    if (state === 'closed' || state === 'closing') {
+      return Promise.reject(new Error(`${label} is already ${state}`));
+    }
+
+    // Cast to access the common on/off('open'|'close'|'error') shared by both types
+    const emitter = dc as mediasoupTypes.EnhancedEventEmitter;
+
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`${label} open timed out after ${TransportManager.DC_OPEN_TIMEOUT}ms`));
+      }, TransportManager.DC_OPEN_TIMEOUT);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        emitter.off('open', onOpen);
+        emitter.off('close', onClose);
+        emitter.off('error', onError);
+      };
+
+      const onOpen = () => {
+        cleanup();
+        resolve();
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error(`${label} closed before opening`));
+      };
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+
+      emitter.on('open', onOpen);
+      emitter.on('close', onClose);
+      emitter.on('error', onError);
+    });
   }
 }
