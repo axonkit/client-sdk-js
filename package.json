@@ -1,0 +1,41 @@
+{
+  "name": "@axonkit/client-sdk-js",
+  "version": "0.1.0",
+  "description": "AxonKit JS/TS Client SDK based on mediasoup-client",
+  "main": "dist/axonkit-client.umd.js",
+  "module": "dist/axonkit-client.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "webrtc",
+    "mediasoup",
+    "axonkit",
+    "realtime"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "dependencies": {
+    "mediasoup-client": "^3.18.7"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.1",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^10.0.2",
+    "rollup": "^4.59.0",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3"
+  }
+}

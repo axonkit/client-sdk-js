@@ -1,0 +1,101 @@
+import { LocalTrack } from './LocalTrack';
+import { LocalAudioTrack } from './LocalAudioTrack';
+import { LocalVideoTrack } from './LocalVideoTrack';
+import { TrackSource } from '../protocol/types';
+import {
+  defaultAudioCaptureOptions,
+  defaultVideoCaptureOptions,
+  type AudioCaptureOptions,
+  type VideoCaptureOptions,
+  type ScreenShareCaptureOptions,
+  type CreateLocalTracksOptions,
+} from './options';
+
+function audioConstraints(opts: AudioCaptureOptions | true): MediaTrackConstraints {
+  if (opts === true) opts = defaultAudioCaptureOptions;
+  return {
+    echoCancellation: opts.echoCancellation,
+    noiseSuppression: opts.noiseSuppression,
+    autoGainControl: opts.autoGainControl,
+    deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+    channelCount: opts.channelCount,
+    sampleRate: opts.sampleRate,
+  };
+}
+
+function videoConstraints(opts: VideoCaptureOptions | true): MediaTrackConstraints {
+  if (opts === true) opts = defaultVideoCaptureOptions;
+  return {
+    width: opts.resolution?.width,
+    height: opts.resolution?.height,
+    frameRate: opts.frameRate,
+    facingMode: opts.facingMode,
+    deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+  };
+}
+
+export async function createLocalTracks(
+  options: CreateLocalTracksOptions = { audio: true, video: true },
+): Promise<LocalTrack[]> {
+  const constraints: MediaStreamConstraints = {};
+  if (options.audio) constraints.audio = audioConstraints(options.audio);
+  if (options.video) constraints.video = videoConstraints(options.video);
+
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const tracks: LocalTrack[] = [];
+
+  for (const at of stream.getAudioTracks()) {
+    tracks.push(new LocalAudioTrack(at, at.label, constraints.audio as MediaTrackConstraints));
+  }
+  for (const vt of stream.getVideoTracks()) {
+    tracks.push(new LocalVideoTrack(vt, vt.label, TrackSource.Camera, constraints.video as MediaTrackConstraints));
+  }
+
+  return tracks;
+}
+
+export async function createLocalAudioTrack(
+  options?: AudioCaptureOptions,
+): Promise<LocalAudioTrack> {
+  const constraints = audioConstraints(options ?? defaultAudioCaptureOptions);
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+  const track = stream.getAudioTracks()[0];
+  return new LocalAudioTrack(track, track.label, constraints);
+}
+
+export async function createLocalVideoTrack(
+  options?: VideoCaptureOptions,
+): Promise<LocalVideoTrack> {
+  const constraints = videoConstraints(options ?? defaultVideoCaptureOptions);
+  const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
+  const track = stream.getVideoTracks()[0];
+  return new LocalVideoTrack(track, track.label, TrackSource.Camera, constraints);
+}
+
+export async function createLocalScreenTracks(
+  options?: ScreenShareCaptureOptions,
+): Promise<LocalTrack[]> {
+  const constraints: DisplayMediaStreamOptions = {
+    video: {
+      width: options?.resolution?.width,
+      height: options?.resolution?.height,
+      frameRate: options?.frameRate,
+    } as MediaTrackConstraints,
+    audio: options?.audio
+      ? (typeof options.audio === 'boolean' ? true : audioConstraints(options.audio))
+      : false,
+  };
+
+  const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+  const tracks: LocalTrack[] = [];
+
+  for (const vt of stream.getVideoTracks()) {
+    tracks.push(new LocalVideoTrack(vt, vt.label, TrackSource.ScreenShare));
+  }
+  for (const at of stream.getAudioTracks()) {
+    tracks.push(new LocalAudioTrack(at, at.label));
+    tracks[tracks.length - 1].source = TrackSource.ScreenShareAudio;
+  }
+
+  return tracks;
+}

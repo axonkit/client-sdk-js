@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AxonKit Client SDK Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 24px; color: #f1f5f9; }
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 24px; padding: 20px; background: #1e293b; border-radius: 12px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input { padding: 8px 12px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 0.9rem; outline: none; }
+    .field input:focus { border-color: #6366f1; }
+    button { padding: 8px 20px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { background: #475569; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .media-actions { display: flex; gap: 8px; margin-bottom: 24px; }
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .video-tile { background: #1e293b; border-radius: 12px; overflow: hidden; position: relative; }
+    .video-tile video { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
+    .video-tile .label { position: absolute; bottom: 8px; left: 8px; padding: 4px 10px; background: rgba(0,0,0,0.6); border-radius: 6px; font-size: 0.8rem; }
+    #log { margin-top: 24px; padding: 16px; background: #1e293b; border-radius: 12px; max-height: 200px; overflow-y: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6; color: #94a3b8; }
+    #log .info { color: #6366f1; }
+    #log .error { color: #ef4444; }
+    #log .warn { color: #eab308; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AxonKit Client SDK Demo</h1>
+
+    <div class="controls">
+      <div class="field">
+        <label>Server URL</label>
+        <input type="text" id="url" value="http://localhost:7880" />
+      </div>
+      <div class="field">
+        <label>Token</label>
+        <input type="text" id="token" placeholder="JWT token" />
+      </div>
+      <button class="btn-primary" id="btnConnect">Connect</button>
+      <button class="btn-danger" id="btnDisconnect" disabled>Disconnect</button>
+    </div>
+
+    <div class="media-actions">
+      <button class="btn-secondary" id="btnCamera" disabled>Enable Camera</button>
+      <button class="btn-secondary" id="btnMic" disabled>Enable Mic</button>
+      <button class="btn-secondary" id="btnScreen" disabled>Share Screen</button>
+    </div>
+
+    <div class="video-grid" id="videoGrid"></div>
+
+    <div id="log"></div>
+  </div>
+
+  <script type="module">
+    import { Room, RoomState, setLogLevel, LogLevel } from '../../dist/axonkit-client.esm.js';
+
+    setLogLevel(LogLevel.DEBUG);
+
+    const room = new Room({ autoSubscribe: true, dynacast: true });
+    const $ = (id) => document.getElementById(id);
+
+    let cameraEnabled = false;
+    let micEnabled = false;
+    let screenEnabled = false;
+
+    function logMsg(text, cls = 'info') {
+      const el = $('log');
+      const line = document.createElement('div');
+      line.className = cls;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function addVideoTile(id, label) {
+      const tile = document.createElement('div');
+      tile.className = 'video-tile';
+      tile.id = `tile-${id}`;
+      tile.innerHTML = `<video id="video-${id}" autoplay playsinline></video><div class="label">${label}</div>`;
+      $('videoGrid').appendChild(tile);
+      return tile.querySelector('video');
+    }
+
+    function removeVideoTile(id) {
+      const tile = $(`tile-${id}`);
+      if (tile) tile.remove();
+    }
+
+    $('btnConnect').onclick = async () => {
+      const url = $('url').value;
+      const token = $('token').value;
+      if (!url || !token) return logMsg('Please enter URL and token', 'warn');
+
+      try {
+        logMsg('Connecting...');
+        await room.connect(url, token);
+        logMsg(`Connected to room: ${room.name}`);
+        $('btnConnect').disabled = true;
+        $('btnDisconnect').disabled = false;
+        $('btnCamera').disabled = false;
+        $('btnMic').disabled = false;
+        $('btnScreen').disabled = false;
+      } catch (err) {
+        logMsg(`Connection failed: ${err.message}`, 'error');
+      }
+    };
+
+    $('btnDisconnect').onclick = async () => {
+      await room.disconnect();
+    };
+
+    $('btnCamera').onclick = async () => {
+      cameraEnabled = !cameraEnabled;
+      $('btnCamera').textContent = cameraEnabled ? 'Disable Camera' : 'Enable Camera';
+      try {
+        await room.localParticipant.setCameraEnabled(cameraEnabled);
+        if (cameraEnabled) {
+          const pub = room.localParticipant.getTrackPublication('camera');
+          if (pub?.track) {
+            const el = addVideoTile('local-camera', 'You (Camera)');
+            pub.track.attach(el);
+          }
+        } else {
+          removeVideoTile('local-camera');
+        }
+      } catch (err) {
+        logMsg(`Camera error: ${err.message}`, 'error');
+      }
+    };
+
+    $('btnMic').onclick = async () => {
+      micEnabled = !micEnabled;
+      $('btnMic').textContent = micEnabled ? 'Disable Mic' : 'Enable Mic';
+      try {
+        await room.localParticipant.setMicrophoneEnabled(micEnabled);
+        logMsg(micEnabled ? 'Mic enabled' : 'Mic disabled');
+      } catch (err) {
+        logMsg(`Mic error: ${err.message}`, 'error');
+      }
+    };
+
+    $('btnScreen').onclick = async () => {
+      screenEnabled = !screenEnabled;
+      $('btnScreen').textContent = screenEnabled ? 'Stop Sharing' : 'Share Screen';
+      try {
+        await room.localParticipant.setScreenShareEnabled(screenEnabled);
+        if (screenEnabled) {
+          const pub = room.localParticipant.getTrackPublication('screen_share');
+          if (pub?.track) {
+            const el = addVideoTile('local-screen', 'You (Screen)');
+            pub.track.attach(el);
+          }
+        } else {
+          removeVideoTile('local-screen');
+        }
+      } catch (err) {
+        logMsg(`Screen share error: ${err.message}`, 'error');
+      }
+    };
+
+    room.on('connected', () => logMsg('Room connected'));
+
+    room.on('disconnected', (reason) => {
+      logMsg(`Disconnected: ${reason ?? 'unknown'}`, 'warn');
+      $('btnConnect').disabled = false;
+      $('btnDisconnect').disabled = true;
+      $('btnCamera').disabled = true;
+      $('btnMic').disabled = true;
+      $('btnScreen').disabled = true;
+      $('videoGrid').innerHTML = '';
+    });
+
+    room.on('reconnecting', () => logMsg('Reconnecting...', 'warn'));
+    room.on('reconnected', () => logMsg('Reconnected!'));
+
+    room.on('participantJoined', (p) => {
+      logMsg(`Participant joined: ${p.identity}`);
+    });
+
+    room.on('participantLeft', (p) => {
+      logMsg(`Participant left: ${p.identity}`);
+      removeVideoTile(p.sid);
+    });
+
+    room.on('trackSubscribed', (track, pub, participant) => {
+      logMsg(`Track subscribed: ${track.kind} from ${participant.identity}`);
+      if (track.kind === 'video') {
+        const el = addVideoTile(participant.sid, participant.identity ?? participant.sid);
+        track.attach(el);
+      } else if (track.kind === 'audio') {
+        const el = track.attach();
+        el.play().catch(() => {});
+      }
+    });
+
+    room.on('trackUnsubscribed', (track, pub, participant) => {
+      logMsg(`Track unsubscribed: ${track.kind} from ${participant.identity}`);
+      track.detach();
+      if (track.kind === 'video') {
+        removeVideoTile(participant.sid);
+      }
+    });
+
+    room.on('activeSpeakersChanged', (speakers) => {
+      const active = speakers.filter((s) => s.active).map((s) => s.participantSid);
+      if (active.length > 0) {
+        logMsg(`Active speakers: ${active.join(', ')}`);
+      }
+    });
+  </script>
+</body>
+</html>
