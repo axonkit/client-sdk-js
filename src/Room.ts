@@ -149,6 +149,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     try {
       // 1. Generate certificate and get DTLS fingerprints
+      // Re-instantiate TransportManager to ensure clean state for every connect()
+      if (this.transportManager) {
+        await this.transportManager.close();
+      }
+      this.transportManager = new TransportManager(this.signalClient);
+      
+      // Re-instantiate RPCClient as it might have been closed
+      this.rpcClient = new RPCClient();
+
       const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
       const hasDtlsFingerprints = fingerprints.length > 0;
 

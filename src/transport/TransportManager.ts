@@ -78,10 +78,12 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     this.hasDtlsFingerprints = hasDtlsFingerprints;
 
     // 1. Load router RTP capabilities
-    await this.device.load({
-      routerRtpCapabilities: joinResponse.rtpCapabilities,
-    });
-    log.info('Device loaded with RTP capabilities');
+    if (!this.device.loaded) {
+      await this.device.load({
+        routerRtpCapabilities: joinResponse.rtpCapabilities,
+      });
+      log.info('Device loaded with RTP capabilities');
+    }
 
     const additionalSettings: Partial<RTCConfiguration> = {};
     if (this.certificate) {
