@@ -231,6 +231,7 @@ export interface ConnectRequest {
   nodeId: string;
   participantSid: string;
   transports: TransportConnectInfo[];
+  token?: string;
 }
 
 export interface TransportConnectInfo {

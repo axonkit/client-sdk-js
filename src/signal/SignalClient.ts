@@ -10,13 +10,12 @@ export interface JoinResult {
 }
 
 export function isReconnectResponse(resp: any): resp is ReconnectResponse {
-  return resp && 'iceParameters' in resp && !('participant' in resp);
+  return resp && 'iceParameters' in resp && !('participant' in resp) && !resp.fullReconnect;
 }
 
 export class SignalClient {
   private nodeId = '';
   private logId = '';
-  private token = '';
 
   get currentNodeId(): string {
     return this.nodeId;
@@ -26,22 +25,20 @@ export class SignalClient {
     return this.logId;
   }
 
-  async join(url: string, token: string, request: JoinRequest): Promise<JoinResult> {
-    const endpoint = `${url}/rtc/join`;
-    log.info(`Joining room at ${endpoint}`);
-
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    };
+  async join(url: string, request: JoinRequest): Promise<JoinResult> {
+    const u = new URL(`${url}/rtc/join`);
     if (this.nodeId) {
-      headers['X-Node-Id'] = this.nodeId;
+      u.searchParams.set('nodeId', this.nodeId);
     }
+    const endpoint = u.toString();
+    log.info(`Joining room at ${endpoint}`);
 
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(request),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ payload: JSON.stringify(request) }),
     });
 
     if (!resp.ok) {
@@ -55,7 +52,6 @@ export class SignalClient {
     const response = (await resp.json()) as JoinResponse | ReconnectResponse;
 
     this.logId = resp.headers.get('X-Log-Id') ?? '';
-    this.token = token;
 
     if (isReconnectResponse(response)) {
       log.info('Received ICE restart response');
@@ -68,17 +64,19 @@ export class SignalClient {
   }
 
   async connect(url: string, request: ConnectRequest): Promise<void> {
-    const endpoint = `${url}/rtc/connect`;
+    const u = new URL(`${url}/rtc/connect`);
+    if (this.nodeId) {
+      u.searchParams.set('nodeId', this.nodeId);
+    }
+    const endpoint = u.toString();
     log.info(`Connecting transports at ${endpoint}`);
 
     const resp = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token}`,
-        'X-Node-Id': this.nodeId,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify(request),
+      body: new URLSearchParams({ payload: JSON.stringify(request) }),
     });
 
     if (!resp.ok) {

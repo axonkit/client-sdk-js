@@ -174,10 +174,11 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         reconnect: false,
         participantSid: '',
         nodeId: '',
+        token,
       };
 
       // 3. HTTP Join
-      const { response: resp } = await this.signalClient.join(url, token, joinRequest);
+      const { response: resp } = await this.signalClient.join(url, joinRequest);
       const joinResponse = resp as JoinResponse; // Cast to JoinResponse as reconnect is false
       this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
@@ -292,7 +293,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         token: this.token,
       };
 
-      const { response: resp } = await this.signalClient.join(this.url, this.token, joinRequest);
+      const { response: resp } = await this.signalClient.join(this.url, joinRequest);
 
       if (isReconnectResponse(resp)) {
         // --- ICE Restart Path ---
