@@ -86,8 +86,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private participantSid = '';
 
   private signalClient: SignalClient;
-  private rpcClient: RPCClient;
-  private transportManager: TransportManager;
+  private rpcClient!: RPCClient;
+  private transportManager!: TransportManager;
   private _localParticipant!: LocalParticipant;
   private _remoteParticipants = new Map<string, RemoteParticipant>();
 
@@ -108,8 +108,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this.reconnectPolicy = options?.reconnectPolicy ?? DEFAULT_RECONNECT_POLICY;
 
     this.signalClient = new SignalClient();
-    this.rpcClient = new RPCClient();
-    this.transportManager = new TransportManager(this.signalClient);
   }
 
   get state(): RoomState {
