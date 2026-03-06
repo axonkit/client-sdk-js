@@ -33,8 +33,6 @@ export function setLogger(logger: LoggerInterface): void {
 export function getLogger(tag: string): LoggerInterface {
   const prefix = `[AxonKit:${tag}]`;
 
-  const noop = () => {};
-
   function wrap(level: LogLevel, consoleFn: (...args: any[]) => void) {
     return (msg: string, ...args: any[]) => {
       if (globalLevel > level) return;
@@ -48,8 +46,8 @@ export function getLogger(tag: string): LoggerInterface {
   }
 
   return {
-    trace: globalLevel <= LogLevel.TRACE ? wrap(LogLevel.TRACE, console.debug) : noop,
-    debug: globalLevel <= LogLevel.DEBUG ? wrap(LogLevel.DEBUG, console.debug) : noop,
+    trace: wrap(LogLevel.TRACE, console.debug),
+    debug: wrap(LogLevel.DEBUG, console.debug),
     info: wrap(LogLevel.INFO, console.info),
     warn: wrap(LogLevel.WARN, console.warn),
     error: wrap(LogLevel.ERROR, console.error),

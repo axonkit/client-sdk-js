@@ -117,6 +117,8 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
   }
 
   async close(): Promise<void> {
+    if (!this.sendTransport && !this.recvTransport) return;
+
     this.signalDataProducer?.close();
     this.signalDataConsumer?.close();
     this.sendTransport?.close();

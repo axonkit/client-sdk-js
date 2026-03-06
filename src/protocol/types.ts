@@ -45,6 +45,14 @@ export enum DisconnectReason {
   RoomDeleted = 5,
   StateMismatch = 6,
   JoinFailure = 7,
+  Migration = 8,
+  SignalClose = 9,
+  RoomClosed = 10,
+  UserUnavailable = 11,
+  UserRejected = 12,
+  SipTrunkFailure = 13,
+  ConnectionTimeout = 14,
+  MediaFailure = 15,
 }
 
 export enum ParticipantState {

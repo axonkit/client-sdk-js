@@ -350,6 +350,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   // --- Heartbeat ---
 
   private startHeartbeat(intervalSec: number, timeoutSec: number): void {
+    this.stopHeartbeat(); // Ensure any existing heartbeat is stopped first
     this.pingIntervalSec = intervalSec || 5;
     this.pingTimeoutSec = timeoutSec || 15;
 
@@ -370,6 +371,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   private sendPing(): void {
+    if (this._state !== RoomState.Connected) return;
+
     const timestamp = Date.now();
     const req: PingRequest = { timestamp };
 
@@ -377,7 +380,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     if (this.pingTimeoutTimer) clearTimeout(this.pingTimeoutTimer);
     this.pingTimeoutTimer = setTimeout(() => {
       log.warn('Ping timeout, attempting reconnect');
-      this.handleDisconnect(DisconnectReason.StateMismatch);
+      this.handleDisconnect(DisconnectReason.ConnectionTimeout);
     }, this.pingTimeoutSec * 1000);
 
     this.rpcClient
@@ -671,6 +674,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   private cleanup(reason: DisconnectReason): void {
+    if (this._state === RoomState.Disconnected) return;
+    this._state = RoomState.Disconnected;
+
     this.stopHeartbeat();
     this.rpcClient.close();
     this.transportManager.close().catch(() => {});
@@ -686,7 +692,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.pageLeaveHandler = undefined;
     }
 
-    this._state = RoomState.Disconnected;
     this.emit('disconnected', reason);
     log.info(`Disconnected from room: reason=${DisconnectReason[reason]}`);
   }
