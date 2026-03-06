@@ -60,6 +60,7 @@ export enum ParticipantState {
   Joined = 1,
   Active = 2,
   Disconnected = 3,
+  Suspended = 4,
 }
 
 // --- Transport Params ---
@@ -204,7 +205,7 @@ export interface JoinRequest {
   reconnect: boolean;
   participantSid: string;
   nodeId: string;
-  syncState?: SyncState;
+  token?: string;
 }
 
 export interface JoinResponse {
@@ -219,6 +220,11 @@ export interface JoinResponse {
   signal: SignalChannels;
   rtpCapabilities: mediasoupTypes.RtpCapabilities;
   otherParticipants?: ParticipantInfo[];
+  fullReconnect?: boolean;
+}
+
+export interface ReconnectResponse {
+  iceParameters: Record<string, IceParameters>;
 }
 
 export interface ConnectRequest {
@@ -250,10 +256,12 @@ export interface DataReceiveState {
 
 export interface ReadyRequest {
   rtpCapabilities: mediasoupTypes.RtpCapabilities;
+  syncState?: SyncState;
 }
 
 export interface ReadyResponse {
   otherParticipants: ParticipantInfo[];
+  room?: RoomInfo;
 }
 
 export interface LeaveRequest {

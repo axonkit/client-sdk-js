@@ -1,6 +1,6 @@
 import { TypedEventEmitter } from './utils/events';
 import { getLogger } from './utils/logger';
-import { SignalClient } from './signal/SignalClient';
+import { SignalClient, isReconnectResponse } from './signal/SignalClient';
 import { RPCClient } from './signal/RPCClient';
 import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
@@ -34,10 +34,12 @@ import {
   type DataSubscriptionCreateRequest,
   type DataSubscriptionClosedNotification,
   type ActiveSpeaker,
+  type ReconnectResponse,
 } from './protocol/types';
 import type { RoomOptions, ReconnectPolicy } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
+import { LocalTrack } from './track/LocalTrack';
 
 export interface ConnectOptions {
   displayName?: string;
@@ -175,7 +177,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       };
 
       // 3. HTTP Join
-      const { response: joinResponse } = await this.signalClient.join(url, token, joinRequest);
+      const { response: resp } = await this.signalClient.join(url, token, joinRequest);
+      const joinResponse = resp as JoinResponse; // Cast to JoinResponse as reconnect is false
       this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
 
@@ -200,6 +203,11 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       };
       const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
 
+      if (readyResp.room) {
+        this._roomInfo = readyResp.room;
+        this._name = readyResp.room.name;
+      }
+
       // 8. Initialize remote participants
       if (readyResp?.otherParticipants) {
         for (const info of readyResp.otherParticipants) {
@@ -210,10 +218,11 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         }
       }
 
-      // 9. Start heartbeat
-      this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
+      // 9. Set state to connected
+      this._state = RoomState.Connected;
 
-      // 10. Set state to connected
+      // 10. Start heartbeat
+      this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
       this.emit('connected');
@@ -269,8 +278,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     if (this._state !== RoomState.Reconnecting) return;
 
     try {
-      const syncState = this.buildSyncState();
-
       const joinRequest: JoinRequest = {
         displayName: this._localParticipant?.name ?? '',
         room: { name: this._name },
@@ -282,8 +289,23 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         reconnect: true,
         participantSid: this.participantSid,
         nodeId: this.nodeId,
-        syncState,
+        token: this.token,
       };
+
+      const { response: resp } = await this.signalClient.join(this.url, this.token, joinRequest);
+
+      if (isReconnectResponse(resp)) {
+        // --- ICE Restart Path ---
+        await this.transportManager.restartIce(resp.iceParameters);
+        this._state = RoomState.Connected;
+        this.reconnectAttempts = 0;
+        this.emit('reconnected');
+        log.info('ICE restart completed');
+        return;
+      }
+
+      // --- Full Reconnect Path ---
+      const jr = resp as JoinResponse;
 
       // Close old transports
       this.stopHeartbeat();
@@ -294,7 +316,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.rpcClient = new RPCClient();
       this.transportManager = new TransportManager(this.signalClient);
 
-      const { response: jr } = await this.signalClient.join(this.url, this.token, joinRequest);
       this.nodeId = jr.serverInfo.nodeId;
       this.applyJoinResponse(jr);
 
@@ -314,8 +335,16 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
       const readyReq: ReadyRequest = {
         rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
+        syncState: this.buildSyncState(),
       };
-      await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+      const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+
+      if (readyResp.room) {
+        this._roomInfo = readyResp.room;
+        this._name = readyResp.room.name;
+      }
+
+      await this.republishAllTracks();
 
       this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
 
@@ -326,6 +355,24 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     } catch (err) {
       log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
       this.attemptReconnect();
+    }
+  }
+
+  private async republishAllTracks(): Promise<void> {
+    if (!this._localParticipant) return;
+    const publications = [...this._localParticipant.trackPublications.values()];
+    this._localParticipant.clearPublications();
+    for (const pub of publications) {
+      if (pub.track) {
+        try {
+          await this._localParticipant.publishTrack(pub.track as LocalTrack, {
+            name: pub.trackName,
+            source: pub.source,
+          });
+        } catch (err) {
+          log.warn(`Failed to republish track ${pub.trackSid}`, err);
+        }
+      }
     }
   }
 

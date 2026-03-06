@@ -8,6 +8,7 @@ import type {
   ConnectRequest,
   TransportConnectInfo,
   DtlsFingerprint,
+  IceParameters,
 } from '../protocol/types';
 
 const log = getLogger('TransportManager');
@@ -116,6 +117,23 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
 
     this.setupTransportEvents();
     await this.setupSignalChannels(joinResponse);
+  }
+
+  async restartIce(iceParamsMap: Record<string, IceParameters>): Promise<void> {
+    if (this.sendTransport) {
+      const params = iceParamsMap[this.sendTransport.id];
+      if (params) {
+        await this.sendTransport.restartIce({ iceParameters: params as mediasoupTypes.IceParameters });
+        log.info(`ICE restarted on send transport ${this.sendTransport.id}`);
+      }
+    }
+    if (this.recvTransport) {
+      const params = iceParamsMap[this.recvTransport.id];
+      if (params) {
+        await this.recvTransport.restartIce({ iceParameters: params as mediasoupTypes.IceParameters });
+        log.info(`ICE restarted on recv transport ${this.recvTransport.id}`);
+      }
+    }
   }
 
   async close(): Promise<void> {

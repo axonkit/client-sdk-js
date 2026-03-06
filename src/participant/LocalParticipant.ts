@@ -291,4 +291,12 @@ export class LocalParticipant extends Participant {
     this.dataProducers.clear();
     this.trackPublications.clear();
   }
+
+  /** @internal */
+  clearPublications(): void {
+    this.producers.clear();
+    this.dataProducers.clear();
+    this.trackSidMap.clear();
+    this.trackPublications.clear();
+  }
 }

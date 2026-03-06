@@ -1,12 +1,16 @@
 import { getLogger } from '../utils/logger';
 import { ConnectionError } from '../protocol/errors';
-import type { JoinRequest, JoinResponse, ConnectRequest } from '../protocol/types';
+import type { JoinRequest, JoinResponse, ReconnectResponse, ConnectRequest } from '../protocol/types';
 
 const log = getLogger('SignalClient');
 
 export interface JoinResult {
-  response: JoinResponse;
+  response: JoinResponse | ReconnectResponse;
   logId: string;
+}
+
+export function isReconnectResponse(resp: any): resp is ReconnectResponse {
+  return resp && 'iceParameters' in resp && !('participant' in resp);
 }
 
 export class SignalClient {
@@ -48,13 +52,18 @@ export class SignalClient {
       );
     }
 
-    const response = (await resp.json()) as JoinResponse;
+    const response = (await resp.json()) as JoinResponse | ReconnectResponse;
 
-    this.nodeId = response.serverInfo.nodeId;
     this.logId = resp.headers.get('X-Log-Id') ?? '';
     this.token = token;
 
-    log.info(`Joined room ${response.room.name}, nodeId=${this.nodeId}`);
+    if (isReconnectResponse(response)) {
+      log.info('Received ICE restart response');
+    } else {
+      this.nodeId = response.serverInfo.nodeId;
+      log.info(`Joined room ${response.room.name}, nodeId=${this.nodeId}`);
+    }
+
     return { response, logId: this.logId };
   }
 
