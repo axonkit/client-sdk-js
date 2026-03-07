@@ -157,7 +157,7 @@ export class LocalParticipant extends Participant {
 
     const trackSid = await producePromise;
     localTrack.sid = trackSid;
-    localTrack.sender = producer.rtpSender ?? undefined;
+    localTrack.producer = producer;
 
     this.producers.set(trackSid, producer);
 
@@ -275,16 +275,18 @@ export class LocalParticipant extends Participant {
   }
 
   /** @internal */
-  closeAll(): void {
+  closeAll(keepTracks = false): void {
     for (const [, producer] of this.producers) {
       producer.close();
     }
     for (const [, dp] of this.dataProducers) {
       dp.close();
     }
-    for (const [, pub] of this.trackPublications) {
-      if (pub.track instanceof LocalTrack) {
-        pub.track.stop();
+    if (!keepTracks) {
+      for (const [, pub] of this.trackPublications) {
+        if (pub.track instanceof LocalTrack) {
+          pub.track.stop();
+        }
       }
     }
     this.producers.clear();

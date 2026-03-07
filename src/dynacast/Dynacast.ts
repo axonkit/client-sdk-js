@@ -31,21 +31,9 @@ export class Dynacast {
     subscribedQualities: SubscribedQualityUpdate[],
   ): Promise<void> {
     const track = this.trackMap.get(trackSid);
-    if (!track?.sender) return;
-
-    const params = track.sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) return;
-
-    for (const sq of subscribedQualities) {
-      const rid = QUALITY_RID_MAP[sq.quality];
-      const encoding = params.encodings.find((e) => e.rid === rid);
-      if (encoding) {
-        encoding.active = sq.enabled;
-        log.debug(`Dynacast: rid=${rid} active=${sq.enabled} for track ${trackSid}`);
-      }
-    }
-
-    await track.sender.setParameters(params);
+    if (!track) return;
+    
+    await track.setDynacastQuality(subscribedQualities);
   }
 
   async handleSubscriptionStatusChanged(
@@ -53,15 +41,12 @@ export class Dynacast {
     hasSubscribers: boolean,
   ): Promise<void> {
     const track = this.trackMap.get(trackSid);
-    if (!track?.sender) return;
-
+    if (!track) return;
+    
+    await track.setSubscriptionStatus(hasSubscribers);
     if (hasSubscribers) {
-      if (track.mediaStreamTrack) {
-        await track.sender.replaceTrack(track.mediaStreamTrack);
-        log.debug(`Dynacast: resumed track ${trackSid}`);
-      }
+      log.debug(`Dynacast: resumed track ${trackSid}`);
     } else {
-      await track.sender.replaceTrack(null);
       log.debug(`Dynacast: paused track ${trackSid} (no subscribers)`);
     }
   }

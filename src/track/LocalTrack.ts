@@ -1,6 +1,7 @@
 import { Track, type TrackEvents } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { getLogger } from '../utils/logger';
+import { types as mediasoupTypes } from 'mediasoup-client';
 
 const log = getLogger('LocalTrack');
 
@@ -10,7 +11,7 @@ export interface LocalTrackEvents extends TrackEvents {
 
 export class LocalTrack extends Track {
   protected constraints?: MediaTrackConstraints;
-  private _sender?: RTCRtpSender;
+  private _producer?: mediasoupTypes.Producer;
 
   constructor(
     kind: TrackKind,
@@ -32,12 +33,12 @@ export class LocalTrack extends Track {
     });
   }
 
-  get sender(): RTCRtpSender | undefined {
-    return this._sender;
+  get producer(): mediasoupTypes.Producer | undefined {
+    return this._producer;
   }
 
-  set sender(s: RTCRtpSender | undefined) {
-    this._sender = s;
+  set producer(p: mediasoupTypes.Producer | undefined) {
+    this._producer = p;
   }
 
   async mute(): Promise<void> {
@@ -85,8 +86,8 @@ export class LocalTrack extends Track {
     const oldTrack = this.mediaStreamTrack;
     this.mediaStreamTrack = newTrack;
 
-    if (this._sender) {
-      await this._sender.replaceTrack(newTrack);
+    if (this._producer) {
+      await this._producer.replaceTrack({ track: newTrack });
     }
 
     // Reattach to all existing elements

@@ -151,7 +151,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       // 1. Generate certificate and get DTLS fingerprints
       // Re-instantiate TransportManager to ensure clean state for every connect()
       if (this.transportManager) {
-        await this.transportManager.close();
+        this.transportManager.close();
       }
       this.transportManager = new TransportManager(this.signalClient);
       
@@ -308,10 +308,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       // --- Full Reconnect Path ---
       const jr = resp as JoinResponse;
 
-      // Close old transports
+      // Close old transports but keep tracks alive
       this.stopHeartbeat();
       this.rpcClient.close();
-      await this.transportManager.close();
+      this.transportManager.close();
 
       // Re-create transport manager and RPC client
       this.rpcClient = new RPCClient();
@@ -365,8 +365,25 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this._localParticipant.clearPublications();
     for (const pub of publications) {
       if (pub.track) {
+        const localTrack = pub.track as LocalTrack;
+        
+        // The old transport is closed, so the old producer is invalid.
+        // We must clear it to avoid "InvalidStateError" when replacing track or publishing.
+        localTrack.producer = undefined;
+
+        if (localTrack.mediaStreamTrack?.readyState === 'ended') {
+          log.info(`Track ${pub.trackSid} ended, attempting to restart and republish`);
+          try {
+             // Restart the track (acquire new MediaStreamTrack)
+             await localTrack.restart();
+          } catch (err) {
+             log.warn(`Failed to restart track ${pub.trackSid}`, err);
+             continue;
+          }
+        }
+        
         try {
-          await this._localParticipant.publishTrack(pub.track as LocalTrack, {
+          await this._localParticipant.publishTrack(localTrack, {
             name: pub.trackName,
             source: pub.source,
           });
@@ -539,6 +556,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     });
 
     this.rpcClient.onNotification('disconnect', (body: DisconnectNotification) => {
+      // If we are reconnecting, we might receive a disconnect notification from the old session
+      // or the server might be shutting down.
+      // If it's a server shutdown or similar, we should probably try to reconnect?
+      // But DisconnectReason.ServerShutdown usually means "bye".
+      
+      // However, the user issue is about server restart.
+      // If server restarts, it might send a Disconnect notification with ServerShutdown or similar?
+      // Or maybe the socket just closes.
+      
       this.handleDisconnect(body.reason);
     });
 
@@ -658,13 +684,23 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   private handleDisconnect(reason: DisconnectReason): void {
-    const shouldReconnect =
-      reason !== DisconnectReason.ClientInitiated &&
-      reason !== DisconnectReason.DuplicateIdentity &&
-      reason !== DisconnectReason.ParticipantRemoved &&
-      reason !== DisconnectReason.RoomDeleted;
+    log.info(`handleDisconnect: ${DisconnectReason[reason]}`);
 
-    if (shouldReconnect) {
+    const isHardFailure =
+      reason === DisconnectReason.ClientInitiated ||
+      reason === DisconnectReason.DuplicateIdentity ||
+      reason === DisconnectReason.ParticipantRemoved ||
+      reason === DisconnectReason.RoomDeleted;
+
+    // If we are already reconnecting, ignore subsequent disconnects unless it's a hard failure
+    if (this._state === RoomState.Reconnecting) {
+      if (isHardFailure) {
+        this.cleanup(reason);
+      }
+      return;
+    }
+
+    if (!isHardFailure) {
       this.attemptReconnect();
     } else {
       this.cleanup(reason);
@@ -734,7 +770,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     this.stopHeartbeat();
     this.rpcClient.close();
-    this.transportManager.close().catch(() => {});
+    this.transportManager.close();
 
     this._localParticipant?.closeAll();
     for (const [, rp] of this._remoteParticipants) {
