@@ -4,6 +4,15 @@ import commonjs from '@rollup/plugin-commonjs';
 import terser from '@rollup/plugin-terser';
 
 export default {
+  onwarn(warning, warn) {
+    // Ignore circular dependencies in node_modules
+    if (warning.code === 'CIRCULAR_DEPENDENCY') {
+      if (warning.ids && warning.ids.every((id) => id.includes('node_modules'))) {
+        return;
+      }
+    }
+    warn(warning);
+  },
   input: 'src/index.ts',
   output: [
     {

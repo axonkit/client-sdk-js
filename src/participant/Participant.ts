@@ -29,6 +29,10 @@ export class TrackPublication {
     this.muted = init.muted;
     this.info = init.info;
   }
+
+  mute(): void {}
+
+  unmute(): void {}
 }
 
 export interface ParticipantEvents {

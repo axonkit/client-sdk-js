@@ -113,6 +113,7 @@ export class RemoteParticipant extends Participant {
     if (pub) {
       pub.track = track;
       pub.consumer = consumer;
+      pub.rpc = this.rpc;
     } else {
       pub = new RemoteTrackPublication({
         trackSid: req.trackSid,
@@ -122,6 +123,7 @@ export class RemoteParticipant extends Participant {
         track,
         muted: req.trackMuted,
         consumer,
+        rpc: this.rpc,
       });
       this.trackPublications.set(req.trackSid, pub);
     }

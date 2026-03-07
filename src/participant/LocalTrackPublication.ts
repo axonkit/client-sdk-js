@@ -28,19 +28,15 @@ export class LocalTrackPublication extends TrackPublication {
     return this.track as LocalTrack | undefined;
   }
 
-  async mute(): Promise<void> {
-    if (this.localTrack) {
-      await this.localTrack.mute();
-    }
-    this.muted = true;
+  override mute(): void {
+    this.producer?.pause();
+    this.localTrack?.setMuted(true);
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: true }).catch(() => {});
   }
 
-  async unmute(): Promise<void> {
-    if (this.localTrack) {
-      await this.localTrack.unmute();
-    }
-    this.muted = false;
+  override unmute(): void {
+    this.producer?.resume();
+    this.localTrack?.setMuted(false);
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: false }).catch(() => {});
   }
 }
