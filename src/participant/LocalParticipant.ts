@@ -184,6 +184,13 @@ export class LocalParticipant extends Participant {
       this.emit('trackUnmuted', publication);
     });
 
+    localTrack.on('ended', () => {
+      log.info(`Track ${trackSid} ended, unpublishing`);
+      this.unpublishTrack(localTrack).catch((err) => {
+        log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
+      });
+    });
+
     this.emit('trackPublished', publication);
     log.info(`Published track ${trackSid} (${localTrack.kind}/${localTrack.source})`);
 

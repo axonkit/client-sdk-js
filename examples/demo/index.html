@@ -188,7 +188,7 @@
     </div>
 
     <script type="module">
-      import { Room, RoomState, setLogLevel, LogLevel } from "../../dist/axonkit-client.esm.js";
+      import { Room, RoomState, setLogLevel, LogLevel, TrackSource } from "../../dist/axonkit-client.esm.js";
 
       setLogLevel(LogLevel.DEBUG);
 
@@ -209,6 +209,9 @@
       }
 
       function addVideoTile(id, label) {
+        // Prevent duplicate tiles
+        if ($(`tile-${id}`)) return $(`video-${id}`);
+
         const tile = document.createElement("div");
         tile.className = "video-tile";
         tile.id = `tile-${id}`;
@@ -220,6 +223,32 @@
       function removeVideoTile(id) {
         const tile = $(`tile-${id}`);
         if (tile) tile.remove();
+      }
+
+      // Local Participant Event Handlers
+      function handleLocalTrackPublished(pub) {
+        if (pub.kind === "video") {
+          const el = addVideoTile(`local-${pub.source}`, `You (${pub.source})`);
+          pub.track.attach(el);
+        }
+      }
+
+      function handleLocalTrackUnpublished(pub) {
+        if (pub.kind === "video") {
+          removeVideoTile(`local-${pub.source}`);
+        }
+
+        // Update state variables and buttons when track is unpublished (e.g. via browser UI stop)
+        if (pub.source === "camera") {
+          cameraEnabled = false;
+          $("btnCamera").textContent = "Enable Camera";
+        } else if (pub.source === "microphone") {
+          micEnabled = false;
+          $("btnMic").textContent = "Enable Mic";
+        } else if (pub.source === "screen_share") {
+          screenEnabled = false;
+          $("btnScreen").textContent = "Share Screen";
+        }
       }
 
       $("btnConnect").onclick = async () => {
@@ -251,55 +280,67 @@
       };
 
       $("btnCamera").onclick = async () => {
-        cameraEnabled = !cameraEnabled;
-        $("btnCamera").textContent = cameraEnabled ? "Disable Camera" : "Enable Camera";
+        const btn = $("btnCamera");
+        const targetState = !cameraEnabled;
+        btn.disabled = true;
+
         try {
-          await room.localParticipant.setCameraEnabled(cameraEnabled);
-          if (cameraEnabled) {
-            const pub = room.localParticipant.getTrackPublication("camera");
-            if (pub?.track) {
-              const el = addVideoTile("local-camera", "You (Camera)");
-              pub.track.attach(el);
-            }
-          } else {
-            removeVideoTile("local-camera");
-          }
+          await room.localParticipant.setCameraEnabled(targetState);
+          cameraEnabled = targetState;
+          btn.textContent = cameraEnabled ? "Disable Camera" : "Enable Camera";
         } catch (err) {
           logMsg(`Camera error: ${err.message}`, "error");
+        } finally {
+          btn.disabled = false;
         }
       };
 
       $("btnMic").onclick = async () => {
-        micEnabled = !micEnabled;
-        $("btnMic").textContent = micEnabled ? "Disable Mic" : "Enable Mic";
+        const btn = $("btnMic");
+        const targetState = !micEnabled;
+        btn.disabled = true;
+
         try {
-          await room.localParticipant.setMicrophoneEnabled(micEnabled);
+          await room.localParticipant.setMicrophoneEnabled(targetState);
+          micEnabled = targetState;
+          btn.textContent = micEnabled ? "Disable Mic" : "Enable Mic";
           logMsg(micEnabled ? "Mic enabled" : "Mic disabled");
         } catch (err) {
           logMsg(`Mic error: ${err.message}`, "error");
+        } finally {
+          btn.disabled = false;
         }
       };
 
       $("btnScreen").onclick = async () => {
-        screenEnabled = !screenEnabled;
-        $("btnScreen").textContent = screenEnabled ? "Stop Sharing" : "Share Screen";
+        const btn = $("btnScreen");
+        const targetState = !screenEnabled;
+        btn.disabled = true;
+
         try {
-          await room.localParticipant.setScreenShareEnabled(screenEnabled);
-          if (screenEnabled) {
-            const pub = room.localParticipant.getTrackPublication("screen_share");
-            if (pub?.track) {
-              const el = addVideoTile("local-screen", "You (Screen)");
-              pub.track.attach(el);
-            }
-          } else {
-            removeVideoTile("local-screen");
-          }
+          await room.localParticipant.setScreenShareEnabled(targetState);
+          screenEnabled = targetState;
+          btn.textContent = screenEnabled ? "Stop Sharing" : "Share Screen";
         } catch (err) {
           logMsg(`Screen share error: ${err.message}`, "error");
+        } finally {
+          btn.disabled = false;
         }
       };
 
-      room.on("connected", () => logMsg("Room connected"));
+      room.on("connected", () => {
+        logMsg("Room connected");
+
+        // Setup local participant events
+        if (room.localParticipant) {
+          // Remove potential previous listeners to prevent duplicates
+          room.localParticipant.off("trackPublished", handleLocalTrackPublished);
+          room.localParticipant.off("trackUnpublished", handleLocalTrackUnpublished);
+
+          room.localParticipant.on("trackPublished", handleLocalTrackPublished);
+          room.localParticipant.on("trackUnpublished", handleLocalTrackUnpublished);
+        }
+      });
 
       room.on("disconnected", (reason) => {
         logMsg(`Disconnected: ${reason ?? "unknown"}`, "warn");
@@ -309,6 +350,14 @@
         $("btnMic").disabled = true;
         $("btnScreen").disabled = true;
         $("videoGrid").innerHTML = "";
+
+        // Reset states
+        cameraEnabled = false;
+        micEnabled = false;
+        screenEnabled = false;
+        $("btnCamera").textContent = "Enable Camera";
+        $("btnMic").textContent = "Enable Mic";
+        $("btnScreen").textContent = "Share Screen";
       });
 
       room.on("reconnecting", () => logMsg("Reconnecting...", "warn"));
