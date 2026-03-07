@@ -164,6 +164,14 @@
           <label>Token</label>
           <input type="text" id="token" placeholder="JWT token" />
         </div>
+        <div class="field">
+          <label>Room Name</label>
+          <input type="text" id="roomName" value="TestRoom" />
+        </div>
+        <div class="field">
+          <label>Display Name</label>
+          <input type="text" id="displayName" value="John Doe" />
+        </div>
         <button class="btn-primary" id="btnConnect">Connect</button>
         <button class="btn-danger" id="btnDisconnect" disabled>Disconnect</button>
       </div>
@@ -217,11 +225,16 @@
       $("btnConnect").onclick = async () => {
         const url = $("url").value;
         const token = $("token").value;
+        const roomName = $("roomName").value;
+        const displayName = $("displayName").value;
+
         if (!url) return logMsg("Please enter URL", "warn");
+        if (!roomName) return logMsg("Please enter Room Name", "warn");
+        if (!displayName) return logMsg("Please enter Display Name", "warn");
 
         try {
           logMsg("Connecting...");
-          await room.connect(url, token, {displayName: "John Doe", roomName: "TestRoom"});
+          await room.connect(url, token, { displayName, roomName });
           logMsg(`Connected to room: ${room.name}`);
           $("btnConnect").disabled = true;
           $("btnDisconnect").disabled = false;
