@@ -5,9 +5,12 @@ import type { RPCClient } from '../signal/RPCClient';
 import type { TrackSource, TrackInfo } from '../protocol/types';
 
 export class RemoteTrackPublication extends TrackPublication {
+  /** @internal */
   consumer?: mediasoupTypes.Consumer;
+  /** @internal */
   rpc?: RPCClient;
 
+  /** @internal */
   constructor(init: {
     trackSid: string;
     trackName: string;

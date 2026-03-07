@@ -10,6 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "declarationDir": "dist",
+    "stripInternal": true,
     "outDir": "dist",
     "sourceMap": true,
     "resolveJsonModule": true,

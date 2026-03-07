@@ -30,10 +30,12 @@ export class LocalTrack extends Track {
     this.constraints = constraints;
   }
 
+  /** @internal */
   get producer(): mediasoupTypes.Producer | undefined {
     return this._producer;
   }
 
+  /** @internal */
   set producer(p: mediasoupTypes.Producer | undefined) {
     this._producer = p;
   }
