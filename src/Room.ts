@@ -9,6 +9,7 @@ import { VERSION, PROTOCOL_VERSION } from './version';
 import {
   RoomState,
   DisconnectReason,
+  ParticipantState,
   type RoomInfo,
   type ServerInfo,
   type JoinRequest,
@@ -197,6 +198,12 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       // 6. Register handlers
       this.registerRPCHandlers();
       this.registerNotificationHandlers();
+
+      // Update local participant state to Connected
+      // We assume if transports are connected (which happened in transportManager.setup), user is active.
+      if (this._localParticipant) {
+        this._localParticipant.state = ParticipantState.Connected;
+      }
 
       // 7. Send ready RPC
       const readyReq: ReadyRequest = {

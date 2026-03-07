@@ -57,10 +57,10 @@ export enum DisconnectReason {
 
 export enum ParticipantState {
   Joining = 0,
-  Joined = 1,
-  Active = 2,
-  Disconnected = 3,
-  Suspended = 4,
+  Connected = 1,
+  Joined = 2,
+  Suspended = 3,
+  Disconnected = 4,
 }
 
 // --- Transport Params ---
