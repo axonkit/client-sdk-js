@@ -42,6 +42,7 @@ import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
 import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
+import { StatsCollector } from './stats/StatsCollector';
 
 export interface ConnectOptions {
   displayName?: string;
@@ -104,6 +105,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private reconnectAttempts = 0;
   private reconnectPolicy: ReconnectPolicy;
 
+  private statsCollector?: StatsCollector;
   private pageLeaveHandler?: () => void;
 
   constructor(options?: RoomOptions) {
@@ -231,8 +233,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       // 9. Set state to connected
       this._state = RoomState.Connected;
 
-      // 10. Start heartbeat
+      // 10. Start heartbeat and stats
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
+      this.startStatsCollector(joinResponse.statsInterval);
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
       this.emit(RoomEvent.Connected);
@@ -319,6 +322,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
       // Close old transports but keep tracks alive
       this.stopHeartbeat();
+      this.stopStatsCollector();
       this.rpcClient.close();
       this.transportManager.close();
 
@@ -358,6 +362,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       await this.republishAllTracks();
 
       this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
+      this.startStatsCollector(jr.statsInterval);
 
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
@@ -455,10 +460,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private sendPing(): void {
     if (this._state !== RoomState.Connected) return;
 
+    // Skip ping if data was sent recently (stats reports act as keepalive)
+    const idleThreshold = this.pingIntervalSec * 1000;
+    if (this.rpcClient.lastSentAt > 0 && Date.now() - this.rpcClient.lastSentAt < idleThreshold) {
+      return;
+    }
+
     const timestamp = Date.now();
     const req: PingRequest = { timestamp };
 
-    // Start timeout
     if (this.pingTimeoutTimer) clearTimeout(this.pingTimeoutTimer);
     this.pingTimeoutTimer = setTimeout(() => {
       log.warn('Ping timeout, attempting reconnect');
@@ -481,6 +491,28 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   get rtt(): number {
     return this.lastRtt;
+  }
+
+  // --- Stats ---
+
+  private startStatsCollector(intervalSec?: number): void {
+    this.stopStatsCollector();
+    if (!intervalSec || intervalSec <= 0) return;
+
+    this.statsCollector = new StatsCollector(
+      this.rpcClient,
+      this.transportManager,
+      this._localParticipant,
+      this._remoteParticipants,
+    );
+    this.statsCollector.start(intervalSec);
+  }
+
+  private stopStatsCollector(): void {
+    if (this.statsCollector) {
+      this.statsCollector.stop();
+      this.statsCollector = undefined;
+    }
   }
 
   // --- Token Refresh ---
@@ -782,6 +814,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this._state = RoomState.Disconnected;
 
     this.stopHeartbeat();
+    this.stopStatsCollector();
     this.rpcClient.close();
     this.transportManager.close();
 

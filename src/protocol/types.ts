@@ -213,6 +213,7 @@ export interface JoinResponse {
   participant: ParticipantInfo;
   pingTimeout: number;
   pingInterval: number;
+  statsInterval?: number;
   serverInfo: ServerInfo;
   iceServers: RTCIceServer[];
   sendTransport: TransportParams;

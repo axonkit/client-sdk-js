@@ -30,6 +30,16 @@ export class RemoteParticipant extends Participant {
     this.rpc = rpc;
   }
 
+  /** @internal */
+  getConsumers(): ReadonlyMap<string, mediasoupTypes.Consumer> {
+    return this.consumers;
+  }
+
+  /** @internal */
+  getDataConsumers(): ReadonlyMap<string, mediasoupTypes.DataConsumer> {
+    return this.dataConsumers;
+  }
+
   static fromInfo(info: ParticipantInfo): RemoteParticipant {
     const p = new RemoteParticipant(info.sid, info.identity, info.name, info.metadata);
     p.state = info.state;
@@ -118,12 +128,7 @@ export class RemoteParticipant extends Participant {
 
     const publication = pub;
 
-    consumer.on('transportclose', () => {
-      log.info(`Transport closed for subscription ${req.subscriptionSid}`);
-      this.consumers.delete(req.subscriptionSid);
-    });
-
-    consumer.on('trackended', () => {
+    consumer.observer.on('trackended', () => {
       log.info(`Remote track ended for subscription ${req.subscriptionSid}`);
     });
 

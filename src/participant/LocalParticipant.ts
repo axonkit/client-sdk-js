@@ -15,7 +15,7 @@ import type {
   DataTrackPublishResponse,
 } from '../protocol/types';
 import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions } from '../track/options';
-import { ParticipantEvent } from '../events';
+import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 
@@ -32,6 +32,16 @@ export class LocalParticipant extends Participant {
   init(rpc: RPCClient, transportManager: TransportManager): void {
     this.rpc = rpc;
     this.transportManager = transportManager;
+  }
+
+  /** @internal */
+  getProducers(): ReadonlyMap<string, mediasoupTypes.Producer> {
+    return this.producers;
+  }
+
+  /** @internal */
+  getDataProducers(): ReadonlyMap<string, mediasoupTypes.DataProducer> {
+    return this.dataProducers;
   }
 
   async setCameraEnabled(enabled: boolean, options?: VideoCaptureOptions): Promise<TrackPublication | undefined> {
@@ -170,23 +180,22 @@ export class LocalParticipant extends Participant {
       track: localTrack,
       muted: localTrack.isMuted,
       producer,
+      rpc: this.rpc,
     });
 
     this.trackPublications.set(trackSid, publication);
 
     producer.observer.on('pause', () => {
-      this.rpc.request('track.mute', { trackSid, muted: true }).catch(() => {});
       publication.muted = true;
       this.emit(ParticipantEvent.TrackMuted, publication);
     });
 
     producer.observer.on('resume', () => {
-      this.rpc.request('track.mute', { trackSid, muted: false }).catch(() => {});
       publication.muted = false;
       this.emit(ParticipantEvent.TrackUnmuted, publication);
     });
 
-    producer.on('trackended', () => {
+    producer.observer.on('trackended', () => {
       log.info(`Track ${trackSid} ended, unpublishing`);
       this.unpublishTrack(localTrack).catch((err) => {
         log.warn(`Failed to auto-unpublish track ${trackSid}`, err);

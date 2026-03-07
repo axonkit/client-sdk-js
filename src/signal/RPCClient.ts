@@ -38,6 +38,7 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
   private requestHandlers = new Map<string, RequestHandler>();
   private notificationHandlers = new Map<string, NotificationHandler>();
   private closed = false;
+  lastSentAt = 0;
 
   bind(
     sendDC: mediasoupTypes.DataProducer,
@@ -84,6 +85,7 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
 
       const encoded = encode(msg);
       this.sendDC!.send(encoded);
+      this.lastSentAt = Date.now();
     });
   }
 
@@ -100,6 +102,20 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
 
     log.debug(`RES logId=${logId} status=${status}`);
     this.sendDC.send(encode(msg));
+    this.lastSentAt = Date.now();
+  }
+
+  notify(method: string, body?: object): void {
+    if (this.closed || !this.sendDC) return;
+
+    const msg: AxonMessage = {
+      type: MessageType.MSG,
+      method,
+      body: body ? jsonToBody(body) : undefined,
+    };
+
+    this.sendDC.send(encode(msg));
+    this.lastSentAt = Date.now();
   }
 
   onRequest(method: string, handler: RequestHandler): void {

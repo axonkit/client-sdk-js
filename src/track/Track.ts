@@ -15,7 +15,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   name: string;
   source: TrackSource;
   sid?: string;
-  mediaStreamTrack?: MediaStreamTrack;
+  mediaStreamTrack: MediaStreamTrack;
   isMuted = false;
 
   protected attachedElements: Set<HTMLMediaElement> = new Set();
@@ -24,13 +24,24 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     kind: TrackKind,
     name: string,
     source: TrackSource = TrackSource.Unknown,
-    mediaStreamTrack?: MediaStreamTrack,
+    mediaStreamTrack: MediaStreamTrack,
   ) {
     super();
     this.kind = kind;
     this.name = name;
     this.source = source;
     this.mediaStreamTrack = mediaStreamTrack;
+    mediaStreamTrack.addEventListener('ended', () => {
+      this.emit(TrackEvent.Ended, this);
+    });
+    this.isMuted = !mediaStreamTrack.enabled;
+  }
+
+  setMuted(value: boolean): void {
+    if (this.isMuted === value) return;
+    this.isMuted = value;
+    this.mediaStreamTrack.enabled = !value;
+    this.emit(value ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 
   attach(element?: HTMLMediaElement): HTMLMediaElement {
@@ -44,10 +55,8 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
       }
     }
 
-    if (this.mediaStreamTrack) {
-      const stream = new MediaStream([this.mediaStreamTrack]);
-      element.srcObject = stream;
-    }
+    const stream = new MediaStream([this.mediaStreamTrack]);
+    element.srcObject = stream;
 
     this.attachedElements.add(element);
     this.emit(TrackEvent.ElementAttached, element);

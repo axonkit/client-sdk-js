@@ -15,7 +15,7 @@ export class RemoteTrack extends Track {
     kind: TrackKind,
     name: string,
     source: TrackSource = TrackSource.Unknown,
-    mediaStreamTrack?: MediaStreamTrack,
+    mediaStreamTrack: MediaStreamTrack,
   ) {
     super(kind, name, source, mediaStreamTrack);
   }

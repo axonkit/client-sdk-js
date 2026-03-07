@@ -28,10 +28,6 @@ export class LocalTrack extends Track {
       mediaStreamTrack,
     );
     this.constraints = constraints;
-
-    mediaStreamTrack.addEventListener('ended', () => {
-      this.emit(TrackEvent.Ended, this);
-    });
   }
 
   get producer(): mediasoupTypes.Producer | undefined {
@@ -42,20 +38,11 @@ export class LocalTrack extends Track {
     this._producer = p;
   }
 
-  async mute(): Promise<void> {
-    if (this.isMuted) return;
-    this.isMuted = true;
-    this._producer?.pause();
-    this.emit(TrackEvent.Muted, this);
-    log.debug(`Track ${this.name} muted`);
-  }
-
-  async unmute(): Promise<void> {
-    if (!this.isMuted) return;
-    this.isMuted = false;
-    this._producer?.resume();
-    this.emit(TrackEvent.Unmuted, this);
-    log.debug(`Track ${this.name} unmuted`);
+  setMuted(value: boolean): void {
+    if (this.isMuted !== value) {
+      super.setMuted(value);
+      log.debug(`Track ${this.name} ${value ? 'unmuted' : 'muted'}`);
+    }
   }
 
   async restart(constraints?: MediaTrackConstraints): Promise<void> {
@@ -94,10 +81,6 @@ export class LocalTrack extends Track {
     }
 
     oldTrack?.stop();
-
-    newTrack.addEventListener('ended', () => {
-      this.emit(TrackEvent.Ended, this);
-    });
   }
 
   stop(): void {

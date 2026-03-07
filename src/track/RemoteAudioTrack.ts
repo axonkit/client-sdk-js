@@ -4,7 +4,7 @@ import { TrackKind, TrackSource } from '../protocol/types';
 export class RemoteAudioTrack extends RemoteTrack {
   private _volume = 1;
 
-  constructor(name: string, mediaStreamTrack?: MediaStreamTrack) {
+  constructor(name: string, mediaStreamTrack: MediaStreamTrack) {
     super(TrackKind.Audio, name, TrackSource.Microphone, mediaStreamTrack);
   }
 
