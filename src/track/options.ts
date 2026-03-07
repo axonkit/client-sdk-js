@@ -35,11 +35,32 @@ export interface TrackPublishOptions {
   source?: TrackSource;
   simulcast?: boolean;
   videoEncoding?: VideoEncoding;
-  videoCodec?: string;
+  videoCodec?: VideoCodec;
+  scalabilityMode?: string;
   audioBitrate?: number;
   dtx?: boolean;
   red?: boolean;
   stopMicTrackOnMute?: boolean;
+  degradationPreference?: RTCDegradationPreference;
+  codecOptions?: PublishCodecOptions;
+  stopTracks?: boolean;
+  disableTrackOnPause?: boolean;
+  zeroRtpOnPause?: boolean;
+}
+
+export type VideoCodec = 'vp8' | 'vp9' | 'h264' | 'av1';
+
+export interface PublishCodecOptions {
+  opusStereo?: boolean;
+  opusFec?: boolean;
+  opusDtx?: boolean;
+  opusMaxPlaybackRate?: number;
+  opusMaxAverageBitrate?: number;
+  opusPtime?: number;
+  opusNack?: boolean;
+  videoGoogleStartBitrate?: number;
+  videoGoogleMaxBitrate?: number;
+  videoGoogleMinBitrate?: number;
 }
 
 export interface VideoEncoding {
@@ -60,8 +81,13 @@ export interface CreateLocalTracksOptions {
   video?: boolean | VideoCaptureOptions;
 }
 
+export interface AdaptiveStreamSettings {
+  pixelDensity?: number | 'screen';
+  pauseVideoInBackground?: boolean;
+}
+
 export interface RoomOptions {
-  adaptiveStream?: boolean;
+  adaptiveStream?: boolean | AdaptiveStreamSettings;
   dynacast?: boolean;
   autoSubscribe?: boolean;
   videoCaptureDefaults?: VideoCaptureOptions;

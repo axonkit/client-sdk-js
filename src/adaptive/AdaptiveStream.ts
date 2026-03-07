@@ -1,4 +1,5 @@
 import { RPCClient } from '../signal/RPCClient';
+import type { AdaptiveStreamSettings } from '../track/options';
 import { getLogger } from '../utils/logger';
 
 const log = getLogger('AdaptiveStream');
@@ -19,9 +20,25 @@ interface ObservedElement {
 export class AdaptiveStream {
   private rpc: RPCClient;
   private observed = new Map<string, ObservedElement>();
+  private pixelDensity: number;
+  private pauseVideoInBackground: boolean;
+  private handleVisibilityBound: () => void;
 
-  constructor(rpc: RPCClient) {
+  constructor(rpc: RPCClient, settings?: AdaptiveStreamSettings) {
     this.rpc = rpc;
+    this.pauseVideoInBackground = settings?.pauseVideoInBackground ?? true;
+
+    if (settings?.pixelDensity === 'screen') {
+      this.pixelDensity = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+    } else {
+      this.pixelDensity = settings?.pixelDensity
+        ?? (typeof window !== 'undefined' && window.devicePixelRatio >= 3 ? 2 : 1);
+    }
+
+    this.handleVisibilityBound = this.handleVisibilityChange.bind(this);
+    if (this.pauseVideoInBackground && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.handleVisibilityBound);
+    }
   }
 
   observe(element: HTMLVideoElement, subscriptionSid: string): void {
@@ -40,7 +57,7 @@ export class AdaptiveStream {
     entry.intersectionObserver = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          this.handleVisibilityChange(subscriptionSid, e.isIntersecting);
+          this.handleIntersection(subscriptionSid, e.isIntersecting);
         }
       },
       { threshold: 0 },
@@ -76,9 +93,30 @@ export class AdaptiveStream {
     for (const [sid] of this.observed) {
       this.unobserve(sid);
     }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityBound);
+    }
   }
 
-  private handleVisibilityChange(subscriptionSid: string, isVisible: boolean): void {
+  private handleVisibilityChange(): void {
+    if (!this.pauseVideoInBackground) return;
+    const hidden = document.hidden;
+    for (const [sid, entry] of this.observed) {
+      if (hidden && !entry.isPaused) {
+        entry.isPaused = true;
+        this.rpc.request('subscription.pause', { subscriptionSid: sid }).catch((err) => {
+          log.warn(`Failed to pause subscription ${sid}`, err);
+        });
+      } else if (!hidden && entry.isPaused) {
+        entry.isPaused = false;
+        this.rpc.request('subscription.resume', { subscriptionSid: sid }).catch((err) => {
+          log.warn(`Failed to resume subscription ${sid}`, err);
+        });
+      }
+    }
+  }
+
+  private handleIntersection(subscriptionSid: string, isVisible: boolean): void {
     const entry = this.observed.get(subscriptionSid);
     if (!entry) return;
 
@@ -124,8 +162,9 @@ export class AdaptiveStream {
   }
 
   private calculateSpatialLayer(width: number, height: number): number {
-    const pixels = width * height;
-    // Rough heuristic: < 150p → layer 0, < 360p → layer 1, else → layer 2
+    const effectiveWidth = width * this.pixelDensity;
+    const effectiveHeight = height * this.pixelDensity;
+    const pixels = effectiveWidth * effectiveHeight;
     if (pixels < 200 * 150) return 0;
     if (pixels < 640 * 360) return 1;
     return 2;

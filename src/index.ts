@@ -41,6 +41,9 @@ export type {
   ScreenShareCaptureOptions,
   VideoEncoding,
   VideoResolution,
+  VideoCodec,
+  PublishCodecOptions,
+  AdaptiveStreamSettings,
   CreateLocalTracksOptions,
   ReconnectPolicy,
 } from './track/options';

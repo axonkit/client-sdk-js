@@ -172,7 +172,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
           autoSubscribe: this._options.autoSubscribe !== false,
-          adaptiveStream: this._options.adaptiveStream === true,
+          adaptiveStream: !!this._options.adaptiveStream,
           dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
         },
         reconnect: false,
@@ -297,7 +297,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
           autoSubscribe: this._options.autoSubscribe !== false,
-          adaptiveStream: this._options.adaptiveStream === true,
+          adaptiveStream: !!this._options.adaptiveStream,
         },
         reconnect: true,
         participantSid: this.participantSid,

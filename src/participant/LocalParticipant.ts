@@ -14,7 +14,7 @@ import type {
   DataTrackPublishRequest,
   DataTrackPublishResponse,
 } from '../protocol/types';
-import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions } from '../track/options';
+import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions, ScreenShareCaptureOptions, PublishCodecOptions } from '../track/options';
 import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
@@ -44,10 +44,14 @@ export class LocalParticipant extends Participant {
     return this.dataProducers;
   }
 
-  async setCameraEnabled(enabled: boolean, options?: VideoCaptureOptions): Promise<TrackPublication | undefined> {
+  async setCameraEnabled(
+    enabled: boolean,
+    captureOptions?: VideoCaptureOptions,
+    publishOptions?: TrackPublishOptions,
+  ): Promise<TrackPublication | undefined> {
     if (enabled) {
-      const track = await createLocalVideoTrack(options);
-      return this.publishTrack(track, { source: TrackSource.Camera });
+      const track = await createLocalVideoTrack(captureOptions);
+      return this.publishTrack(track, { ...publishOptions, source: TrackSource.Camera });
     } else {
       const pub = this.getTrackPublication(TrackSource.Camera);
       if (pub?.track) {
@@ -57,10 +61,14 @@ export class LocalParticipant extends Participant {
     }
   }
 
-  async setMicrophoneEnabled(enabled: boolean, options?: AudioCaptureOptions): Promise<TrackPublication | undefined> {
+  async setMicrophoneEnabled(
+    enabled: boolean,
+    captureOptions?: AudioCaptureOptions,
+    publishOptions?: TrackPublishOptions,
+  ): Promise<TrackPublication | undefined> {
     if (enabled) {
-      const track = await createLocalAudioTrack(options);
-      return this.publishTrack(track, { source: TrackSource.Microphone });
+      const track = await createLocalAudioTrack(captureOptions);
+      return this.publishTrack(track, { ...publishOptions, source: TrackSource.Microphone });
     } else {
       const pub = this.getTrackPublication(TrackSource.Microphone);
       if (pub?.track) {
@@ -70,12 +78,16 @@ export class LocalParticipant extends Participant {
     }
   }
 
-  async setScreenShareEnabled(enabled: boolean): Promise<TrackPublication | undefined> {
+  async setScreenShareEnabled(
+    enabled: boolean,
+    captureOptions?: ScreenShareCaptureOptions,
+    publishOptions?: TrackPublishOptions,
+  ): Promise<TrackPublication | undefined> {
     if (enabled) {
-      const tracks = await createLocalScreenTracks();
+      const tracks = await createLocalScreenTracks(captureOptions);
       let pub: TrackPublication | undefined;
       for (const t of tracks) {
-        pub = await this.publishTrack(t, { source: t.source });
+        pub = await this.publishTrack(t, { ...publishOptions, source: t.source });
       }
       return pub;
     } else {
@@ -116,16 +128,35 @@ export class LocalParticipant extends Participant {
     if (!sendTransport) throw new Error('Send transport not available');
 
     const isVideo = localTrack.kind === TrackKind.Video;
-    let encodings: RTCRtpEncodingParameters[] | undefined;
 
+    let encodings: mediasoupTypes.RtpEncodingParameters[] | undefined;
     if (isVideo && localTrack instanceof LocalVideoTrack) {
-      if (options?.simulcast !== false) {
-        localTrack.setSimulcast(true);
+      if (options?.scalabilityMode) {
+        const enc = options.videoEncoding;
+        encodings = [{
+          scalabilityMode: options.scalabilityMode,
+          maxBitrate: enc?.maxBitrate,
+          maxFramerate: enc?.maxFramerate,
+        }];
+      } else {
+        if (options?.simulcast !== false) {
+          localTrack.setSimulcast(true);
+        }
+        if (options?.videoEncoding) {
+          localTrack.setEncoding(options.videoEncoding);
+        }
+        encodings = localTrack.getSimulcastEncodings();
       }
-      if (options?.videoEncoding) {
-        localTrack.setEncoding(options.videoEncoding);
-      }
-      encodings = localTrack.getSimulcastEncodings();
+    }
+
+    const codecOptions = this.buildCodecOptions(options);
+
+    let codec: mediasoupTypes.RtpCodecCapability | undefined;
+    if (isVideo && options?.videoCodec) {
+      const mimeType = `video/${options.videoCodec}`;
+      codec = this.transportManager.device.rtpCapabilities.codecs?.find(
+        (c) => c.mimeType.toLowerCase() === mimeType,
+      );
     }
 
     const clientTrackId = generateLogId();
@@ -163,6 +194,11 @@ export class LocalParticipant extends Participant {
     const producer = await sendTransport.produce({
       track: localTrack.mediaStreamTrack!,
       encodings,
+      codecOptions,
+      codec,
+      stopTracks: options?.stopTracks,
+      disableTrackOnPause: options?.disableTrackOnPause,
+      zeroRtpOnPause: options?.zeroRtpOnPause,
       appData: { clientTrackId, source: localTrack.source },
     });
 
@@ -296,6 +332,18 @@ export class LocalParticipant extends Participant {
   async updateAttributes(attributes: Record<string, string>): Promise<void> {
     await this.rpc.request('participant.update', { attributes });
     this.attributes = { ...this.attributes, ...attributes };
+  }
+
+  private buildCodecOptions(options?: TrackPublishOptions): PublishCodecOptions | undefined {
+    const explicit = options?.codecOptions;
+    const dtx = options?.dtx;
+    const bitrate = options?.audioBitrate;
+    if (!explicit && dtx === undefined && bitrate === undefined) return undefined;
+    return {
+      ...explicit,
+      ...(dtx !== undefined && { opusDtx: dtx }),
+      ...(bitrate !== undefined && { opusMaxAverageBitrate: bitrate }),
+    };
   }
 
   /** @internal */
