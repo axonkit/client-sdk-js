@@ -1,5 +1,6 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { Participant, type TrackPublication } from './Participant';
+import { Participant, TrackPublication } from './Participant';
+import { LocalTrackPublication } from './LocalTrackPublication';
 import { LocalTrack } from '../track/LocalTrack';
 import { LocalAudioTrack } from '../track/LocalAudioTrack';
 import { LocalVideoTrack } from '../track/LocalVideoTrack';
@@ -14,6 +15,7 @@ import type {
   DataTrackPublishResponse,
 } from '../protocol/types';
 import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions } from '../track/options';
+import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 
@@ -118,9 +120,8 @@ export class LocalParticipant extends Participant {
 
     const clientTrackId = generateLogId();
 
-    // Set up the produce callback to call track.publish RPC
     const producePromise = new Promise<string>((resolve, reject) => {
-      this.transportManager.once('produce', async (params, callback, errback) => {
+      this.transportManager.registerProduceCallback(clientTrackId, async (params, callback, errback) => {
         try {
           const req: TrackPublishRequest = {
             clientTrackId,
@@ -161,37 +162,44 @@ export class LocalParticipant extends Participant {
 
     this.producers.set(trackSid, producer);
 
-    const publication: TrackPublication = {
+    const publication = new LocalTrackPublication({
       trackSid,
       trackName: options?.name ?? localTrack.name,
       kind: localTrack.kind,
       source: localTrack.source,
       track: localTrack,
       muted: localTrack.isMuted,
-    };
+      producer,
+    });
 
     this.trackPublications.set(trackSid, publication);
 
-    // Wire mute/unmute events to RPC
-    localTrack.on('muted', () => {
+    producer.observer.on('pause', () => {
       this.rpc.request('track.mute', { trackSid, muted: true }).catch(() => {});
       publication.muted = true;
-      this.emit('trackMuted', publication);
-    });
-    localTrack.on('unmuted', () => {
-      this.rpc.request('track.mute', { trackSid, muted: false }).catch(() => {});
-      publication.muted = false;
-      this.emit('trackUnmuted', publication);
+      this.emit(ParticipantEvent.TrackMuted, publication);
     });
 
-    localTrack.on('ended', () => {
+    producer.observer.on('resume', () => {
+      this.rpc.request('track.mute', { trackSid, muted: false }).catch(() => {});
+      publication.muted = false;
+      this.emit(ParticipantEvent.TrackUnmuted, publication);
+    });
+
+    producer.on('trackended', () => {
       log.info(`Track ${trackSid} ended, unpublishing`);
       this.unpublishTrack(localTrack).catch((err) => {
         log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
       });
     });
 
-    this.emit('trackPublished', publication);
+    producer.on('transportclose', () => {
+      log.info(`Transport closed for track ${trackSid}`);
+      this.producers.delete(trackSid);
+      this.trackPublications.delete(trackSid);
+    });
+
+    this.emit(ParticipantEvent.TrackPublished, publication);
     log.info(`Published track ${trackSid} (${localTrack.kind}/${localTrack.source})`);
 
     return publication;
@@ -230,7 +238,7 @@ export class LocalParticipant extends Participant {
       if (publication.track instanceof LocalTrack) {
         publication.track.stop();
       }
-      this.emit('trackUnpublished', publication);
+      this.emit(ParticipantEvent.TrackUnpublished, publication);
     }
 
     log.info(`Unpublished track ${trackSid}`);

@@ -41,6 +41,7 @@ import type { RoomOptions, ReconnectPolicy } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
 import { LocalTrack } from './track/LocalTrack';
+import { RoomEvent, ParticipantEvent } from './events';
 
 export interface ConnectOptions {
   displayName?: string;
@@ -56,23 +57,23 @@ const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
 };
 
 export interface RoomEvents {
-  connected: () => void;
-  disconnected: (reason?: DisconnectReason) => void;
-  reconnecting: () => void;
-  reconnected: () => void;
-  participantJoined: (participant: RemoteParticipant) => void;
-  participantLeft: (participant: RemoteParticipant, reason?: string) => void;
-  participantUpdated: (participant: RemoteParticipant) => void;
-  trackPublished: (publication: any, participant: RemoteParticipant) => void;
-  trackUnpublished: (publication: any, participant: RemoteParticipant) => void;
-  trackSubscribed: (track: any, publication: any, participant: RemoteParticipant) => void;
-  trackUnsubscribed: (track: any, publication: any, participant: RemoteParticipant) => void;
-  trackMuted: (publication: any, participant: RemoteParticipant) => void;
-  trackUnmuted: (publication: any, participant: RemoteParticipant) => void;
-  activeSpeakersChanged: (speakers: ActiveSpeaker[]) => void;
-  roomUpdated: (room: RoomInfo) => void;
-  dataReceived: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
-  connectionQualityChanged: (quality: string, participant: any) => void;
+  [RoomEvent.Connected]: () => void;
+  [RoomEvent.Disconnected]: (reason?: DisconnectReason) => void;
+  [RoomEvent.Reconnecting]: () => void;
+  [RoomEvent.Reconnected]: () => void;
+  [RoomEvent.ParticipantJoined]: (participant: RemoteParticipant) => void;
+  [RoomEvent.ParticipantLeft]: (participant: RemoteParticipant, reason?: string) => void;
+  [RoomEvent.ParticipantUpdated]: (participant: RemoteParticipant) => void;
+  [RoomEvent.TrackPublished]: (publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackUnpublished]: (publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackSubscribed]: (track: any, publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackUnsubscribed]: (track: any, publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackMuted]: (publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackUnmuted]: (publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.ActiveSpeakersChanged]: (speakers: ActiveSpeaker[]) => void;
+  [RoomEvent.RoomUpdated]: (room: RoomInfo) => void;
+  [RoomEvent.DataReceived]: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
+  [RoomEvent.ConnectionQualityChanged]: (quality: string, participant: any) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -186,6 +187,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
       // 4. Setup transports + signal DataChannels
       await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints);
+      this.wireTransportEvents();
 
       // 5. Bind RPC to DataChannels
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -233,7 +235,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
-      this.emit('connected');
+      this.emit(RoomEvent.Connected);
       log.info(`Connected to room ${this._name}`);
 
       // Setup page leave handler
@@ -275,7 +277,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     }
 
     this._state = RoomState.Reconnecting;
-    this.emit('reconnecting');
+    this.emit(RoomEvent.Reconnecting);
     this.reconnectAttempts++;
 
     const delay = Math.min(initialDelay * Math.pow(2, this.reconnectAttempts - 1), maxDelay);
@@ -307,8 +309,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         await this.transportManager.restartIce(resp.iceParameters);
         this._state = RoomState.Connected;
         this.reconnectAttempts = 0;
-        this.emit('reconnected');
-        log.info('ICE restart completed');
+      this.emit(RoomEvent.Reconnected);
+      log.info('ICE restart completed');
         return;
       }
 
@@ -328,6 +330,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.applyJoinResponse(jr);
 
       await this.transportManager.setup(this.url, jr, false);
+      this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
         this.rpcClient.bind(
@@ -358,7 +361,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
       this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
-      this.emit('reconnected');
+      this.emit(RoomEvent.Reconnected);
       log.info('Reconnected successfully');
     } catch (err) {
       log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
@@ -591,7 +594,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     rp.init(this.transportManager, this.rpcClient);
     this._remoteParticipants.set(rp.sid, rp);
     this.wireRemoteParticipantEvents(rp);
-    this.emit('participantJoined', rp);
+    this.emit(RoomEvent.ParticipantJoined, rp);
     log.info(`Participant joined: ${rp.identity} (${rp.sid})`);
   }
 
@@ -601,7 +604,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     rp.closeAll();
     this._remoteParticipants.delete(body.participantSid);
-    this.emit('participantLeft', rp, body.reason);
+    this.emit(RoomEvent.ParticipantLeft, rp, body.reason);
     log.info(`Participant left: ${rp.identity} (${rp.sid})`);
   }
 
@@ -610,7 +613,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     if (!rp) return;
 
     rp.updateFromInfo(body.participant);
-    this.emit('participantUpdated', rp);
+    this.emit(RoomEvent.ParticipantUpdated, rp);
   }
 
   private handleTrackPublished(body: TrackPublishedNotification): void {
@@ -618,7 +621,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     if (!rp) return;
 
     const pub = rp.addTrackPublication(body.track);
-    this.emit('trackPublished', pub, rp);
+    this.emit(RoomEvent.TrackPublished, pub, rp);
   }
 
   private handleTrackUnpublished(body: TrackUnpublishedNotification): void {
@@ -627,7 +630,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     const pub = rp.removeTrackPublication(body.trackSid);
     if (pub) {
-      this.emit('trackUnpublished', pub, rp);
+      this.emit(RoomEvent.TrackUnpublished, pub, rp);
     }
   }
 
@@ -638,7 +641,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     rp.setTrackMuted(body.trackSid, body.muted);
     const pub = rp.getTrackPublicationBySid(body.trackSid);
     if (pub) {
-      this.emit(body.muted ? 'trackMuted' : 'trackUnmuted', pub, rp);
+      this.emit(body.muted ? RoomEvent.TrackMuted : RoomEvent.TrackUnmuted, pub, rp);
     }
   }
 
@@ -677,17 +680,17 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         rp.isSpeaking = speaker.active;
         rp.audioLevel = speaker.level;
         if (wasSpeaking !== speaker.active) {
-          rp.emit('isSpeakingChanged', speaker.active);
+          rp.emit(ParticipantEvent.IsSpeakingChanged, speaker.active);
         }
       }
     }
-    this.emit('activeSpeakersChanged', body.speakers);
+    this.emit(RoomEvent.ActiveSpeakersChanged, body.speakers);
   }
 
   private handleRoomUpdated(body: RoomUpdatedNotification): void {
     this._roomInfo = body.room;
     this._name = body.room.name;
-    this.emit('roomUpdated', body.room);
+    this.emit(RoomEvent.RoomUpdated, body.room);
   }
 
   private handleDisconnect(reason: DisconnectReason): void {
@@ -751,23 +754,26 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   private wireRemoteParticipantEvents(rp: RemoteParticipant): void {
-    rp.on('trackSubscribed', (track, pub) => {
-      this.emit('trackSubscribed', track, pub, rp);
+    rp.on(ParticipantEvent.TrackSubscribed, (track, pub) => {
+      this.emit(RoomEvent.TrackSubscribed, track, pub, rp);
     });
-    rp.on('trackUnsubscribed', (track, pub) => {
-      this.emit('trackUnsubscribed', track, pub, rp);
+    rp.on(ParticipantEvent.TrackUnsubscribed, (track, pub) => {
+      this.emit(RoomEvent.TrackUnsubscribed, track, pub, rp);
     });
-    rp.on('trackPublished', (pub) => {
-      this.emit('trackPublished', pub, rp);
+    rp.on(ParticipantEvent.TrackPublished, (pub) => {
+      this.emit(RoomEvent.TrackPublished, pub, rp);
     });
-    rp.on('trackUnpublished', (pub) => {
-      this.emit('trackUnpublished', pub, rp);
+    rp.on(ParticipantEvent.TrackUnpublished, (pub) => {
+      this.emit(RoomEvent.TrackUnpublished, pub, rp);
     });
-    rp.on('trackMuted', (pub) => {
-      this.emit('trackMuted', pub, rp);
+    rp.on(ParticipantEvent.TrackMuted, (pub) => {
+      this.emit(RoomEvent.TrackMuted, pub, rp);
     });
-    rp.on('trackUnmuted', (pub) => {
-      this.emit('trackUnmuted', pub, rp);
+    rp.on(ParticipantEvent.TrackUnmuted, (pub) => {
+      this.emit(RoomEvent.TrackUnmuted, pub, rp);
+    });
+    rp.on(ParticipantEvent.DataReceived, (data) => {
+      this.emit(RoomEvent.DataReceived, data, rp);
     });
   }
 
@@ -790,8 +796,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.pageLeaveHandler = undefined;
     }
 
-    this.emit('disconnected', reason);
+    this.emit(RoomEvent.Disconnected, reason);
     log.info(`Disconnected from room: reason=${DisconnectReason[reason]}`);
+  }
+
+  private wireTransportEvents(): void {
+    this.transportManager.on('connectionFailed', (direction) => {
+      log.warn(`Transport connection failed (${direction}), attempting reconnect`);
+      this.handleDisconnect(DisconnectReason.MediaFailure);
+    });
   }
 
   private setupPageLeaveHandler(): void {

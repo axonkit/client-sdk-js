@@ -1,8 +1,9 @@
 import { TypedEventEmitter } from '../utils/events';
 import type { ParticipantInfo, ParticipantState, TrackInfo, TrackSource } from '../protocol/types';
 import type { Track } from '../track/Track';
+import { ParticipantEvent } from '../events';
 
-export interface TrackPublication {
+export class TrackPublication {
   trackSid: string;
   trackName: string;
   kind: string;
@@ -10,19 +11,38 @@ export interface TrackPublication {
   track?: Track;
   muted: boolean;
   info?: TrackInfo;
+
+  constructor(init: {
+    trackSid: string;
+    trackName: string;
+    kind: string;
+    source: TrackSource;
+    track?: Track;
+    muted: boolean;
+    info?: TrackInfo;
+  }) {
+    this.trackSid = init.trackSid;
+    this.trackName = init.trackName;
+    this.kind = init.kind;
+    this.source = init.source;
+    this.track = init.track;
+    this.muted = init.muted;
+    this.info = init.info;
+  }
 }
 
 export interface ParticipantEvents {
-  trackPublished: (publication: TrackPublication) => void;
-  trackUnpublished: (publication: TrackPublication) => void;
-  trackMuted: (publication: TrackPublication) => void;
-  trackUnmuted: (publication: TrackPublication) => void;
-  trackSubscribed: (track: Track, publication: TrackPublication) => void;
-  trackUnsubscribed: (track: Track, publication: TrackPublication) => void;
-  metadataChanged: (metadata: string | undefined, participant: Participant) => void;
-  nameChanged: (name: string | undefined, participant: Participant) => void;
-  isSpeakingChanged: (speaking: boolean) => void;
-  connectionQualityChanged: (quality: string) => void;
+  [ParticipantEvent.TrackPublished]: (publication: TrackPublication) => void;
+  [ParticipantEvent.TrackUnpublished]: (publication: TrackPublication) => void;
+  [ParticipantEvent.TrackMuted]: (publication: TrackPublication) => void;
+  [ParticipantEvent.TrackUnmuted]: (publication: TrackPublication) => void;
+  [ParticipantEvent.TrackSubscribed]: (track: Track, publication: TrackPublication) => void;
+  [ParticipantEvent.TrackUnsubscribed]: (track: Track, publication: TrackPublication) => void;
+  [ParticipantEvent.MetadataChanged]: (metadata: string | undefined, participant: Participant) => void;
+  [ParticipantEvent.NameChanged]: (name: string | undefined, participant: Participant) => void;
+  [ParticipantEvent.IsSpeakingChanged]: (speaking: boolean) => void;
+  [ParticipantEvent.ConnectionQualityChanged]: (quality: string) => void;
+  [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
 }
 
 export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
@@ -52,12 +72,12 @@ export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
 
     if (info.name !== undefined && info.name !== this.name) {
       this.name = info.name;
-      this.emit('nameChanged', this.name, this);
+      this.emit(ParticipantEvent.NameChanged, this.name, this);
     }
 
     if (info.metadata !== undefined && info.metadata !== this.metadata) {
       this.metadata = info.metadata;
-      this.emit('metadataChanged', this.metadata, this);
+      this.emit(ParticipantEvent.MetadataChanged, this.metadata, this);
     }
 
     if (info.attributes) {

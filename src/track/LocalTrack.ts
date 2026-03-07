@@ -1,12 +1,13 @@
 import { Track, type TrackEvents } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
+import { TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { types as mediasoupTypes } from 'mediasoup-client';
 
 const log = getLogger('LocalTrack');
 
 export interface LocalTrackEvents extends TrackEvents {
-  restarted: (track: LocalTrack) => void;
+  [TrackEvent.Restarted]: (track: LocalTrack) => void;
 }
 
 export class LocalTrack extends Track {
@@ -29,7 +30,7 @@ export class LocalTrack extends Track {
     this.constraints = constraints;
 
     mediaStreamTrack.addEventListener('ended', () => {
-      this.emit('ended', this);
+      this.emit(TrackEvent.Ended, this);
     });
   }
 
@@ -44,20 +45,16 @@ export class LocalTrack extends Track {
   async mute(): Promise<void> {
     if (this.isMuted) return;
     this.isMuted = true;
-    if (this.mediaStreamTrack) {
-      this.mediaStreamTrack.enabled = false;
-    }
-    this.emit('muted', this);
+    this._producer?.pause();
+    this.emit(TrackEvent.Muted, this);
     log.debug(`Track ${this.name} muted`);
   }
 
   async unmute(): Promise<void> {
     if (!this.isMuted) return;
     this.isMuted = false;
-    if (this.mediaStreamTrack) {
-      this.mediaStreamTrack.enabled = true;
-    }
-    this.emit('unmuted', this);
+    this._producer?.resume();
+    this.emit(TrackEvent.Unmuted, this);
     log.debug(`Track ${this.name} unmuted`);
   }
 
@@ -79,7 +76,7 @@ export class LocalTrack extends Track {
 
     await this.replaceTrack(newTrack);
     log.info(`Track ${this.name} restarted`);
-    (this as any).emit('restarted', this);
+    (this as any).emit(TrackEvent.Restarted, this);
   }
 
   async replaceTrack(newTrack: MediaStreamTrack): Promise<void> {
@@ -99,7 +96,7 @@ export class LocalTrack extends Track {
     oldTrack?.stop();
 
     newTrack.addEventListener('ended', () => {
-      this.emit('ended', this);
+      this.emit(TrackEvent.Ended, this);
     });
   }
 

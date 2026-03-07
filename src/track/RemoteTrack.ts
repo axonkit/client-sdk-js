@@ -1,9 +1,10 @@
 import { Track, type TrackEvents } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
+import { TrackEvent } from '../events';
 
 export interface RemoteTrackEvents extends TrackEvents {
-  subscribed: (track: RemoteTrack) => void;
-  unsubscribed: (track: RemoteTrack) => void;
+  [TrackEvent.Subscribed]: (track: RemoteTrack) => void;
+  [TrackEvent.Unsubscribed]: (track: RemoteTrack) => void;
 }
 
 export class RemoteTrack extends Track {
@@ -30,6 +31,6 @@ export class RemoteTrack extends Track {
   setMuted(muted: boolean): void {
     if (this.isMuted === muted) return;
     this.isMuted = muted;
-    this.emit(muted ? 'muted' : 'unmuted', this);
+    this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 }

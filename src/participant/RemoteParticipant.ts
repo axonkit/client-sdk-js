@@ -1,5 +1,6 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { Participant, type TrackPublication } from './Participant';
+import { Participant, TrackPublication } from './Participant';
+import { RemoteTrackPublication } from './RemoteTrackPublication';
 import { RemoteTrack } from '../track/RemoteTrack';
 import { RemoteAudioTrack } from '../track/RemoteAudioTrack';
 import { RemoteVideoTrack } from '../track/RemoteVideoTrack';
@@ -12,6 +13,7 @@ import type {
   SubscriptionCreateRequest,
   DataSubscriptionCreateRequest,
 } from '../protocol/types';
+import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
 
 const log = getLogger('RemoteParticipant');
@@ -41,17 +43,17 @@ export class RemoteParticipant extends Participant {
     return p;
   }
 
-  addTrackPublication(info: TrackInfo): TrackPublication {
-    const pub: TrackPublication = {
+  addTrackPublication(info: TrackInfo): RemoteTrackPublication {
+    const pub = new RemoteTrackPublication({
       trackSid: info.sid,
       trackName: info.name,
       kind: info.kind,
       source: info.source,
       muted: info.muted,
       info,
-    };
+    });
     this.trackPublications.set(info.sid, pub);
-    this.emit('trackPublished', pub);
+    this.emit(ParticipantEvent.TrackPublished, pub);
     return pub;
   }
 
@@ -64,10 +66,10 @@ export class RemoteParticipant extends Participant {
     if (pub.track) {
       const track = pub.track as RemoteTrack;
       track.stop();
-      this.emit('trackUnsubscribed', track, pub);
+      this.emit(ParticipantEvent.TrackUnsubscribed, track, pub);
     }
 
-    this.emit('trackUnpublished', pub);
+    this.emit(ParticipantEvent.TrackUnpublished, pub);
     return pub;
   }
 
@@ -97,19 +99,52 @@ export class RemoteParticipant extends Participant {
     track.publisherSid = req.publisherSid;
     track.isMuted = req.trackMuted;
 
-    const pub = this.trackPublications.get(req.trackSid);
+    let pub = this.trackPublications.get(req.trackSid) as RemoteTrackPublication | undefined;
     if (pub) {
       pub.track = track;
+      pub.consumer = consumer;
+    } else {
+      pub = new RemoteTrackPublication({
+        trackSid: req.trackSid,
+        trackName: req.subscriptionSid,
+        kind: req.kind,
+        source: TrackSource.Unknown,
+        track,
+        muted: req.trackMuted,
+        consumer,
+      });
+      this.trackPublications.set(req.trackSid, pub);
     }
 
-    this.emit('trackSubscribed', track, pub ?? {
-      trackSid: req.trackSid,
-      trackName: req.subscriptionSid,
-      kind: req.kind,
-      source: TrackSource.Unknown,
-      track,
-      muted: req.trackMuted,
+    const publication = pub;
+
+    consumer.on('transportclose', () => {
+      log.info(`Transport closed for subscription ${req.subscriptionSid}`);
+      this.consumers.delete(req.subscriptionSid);
     });
+
+    consumer.on('trackended', () => {
+      log.info(`Remote track ended for subscription ${req.subscriptionSid}`);
+    });
+
+    consumer.observer.on('pause', () => {
+      track.setMuted(true);
+      publication.muted = true;
+      this.emit(ParticipantEvent.TrackMuted, publication);
+    });
+
+    consumer.observer.on('resume', () => {
+      track.setMuted(false);
+      publication.muted = false;
+      this.emit(ParticipantEvent.TrackUnmuted, publication);
+    });
+
+    consumer.observer.on('close', () => {
+      log.info(`Consumer closed for subscription ${req.subscriptionSid}`);
+      this.consumers.delete(req.subscriptionSid);
+    });
+
+    this.emit(ParticipantEvent.TrackSubscribed, track, publication);
 
     log.info(`Subscribed to track ${req.trackSid} via subscription ${req.subscriptionSid}`);
     return { ok: true };
@@ -132,6 +167,7 @@ export class RemoteParticipant extends Participant {
 
     dataConsumer.on('message', (data: ArrayBuffer) => {
       log.debug(`Data message from ${this.sid} subscription ${req.dataSubscriptionSid}`);
+      this.emit(ParticipantEvent.DataReceived, data);
     });
 
     log.info(`Data subscription created: ${req.dataSubscriptionSid}`);
@@ -150,7 +186,7 @@ export class RemoteParticipant extends Participant {
       if (pub.track && (pub.track as RemoteTrack).subscriptionSid === subscriptionSid) {
         const track = pub.track as RemoteTrack;
         pub.track = undefined;
-        this.emit('trackUnsubscribed', track, pub);
+        this.emit(ParticipantEvent.TrackUnsubscribed, track, pub);
         track.stop();
         break;
       }
@@ -174,7 +210,7 @@ export class RemoteParticipant extends Participant {
     if (pub.track) {
       (pub.track as RemoteTrack).setMuted(muted);
     }
-    this.emit(muted ? 'trackMuted' : 'trackUnmuted', pub);
+    this.emit(muted ? ParticipantEvent.TrackMuted : ParticipantEvent.TrackUnmuted, pub);
   }
 
   /** @internal */

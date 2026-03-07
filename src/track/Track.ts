@@ -1,12 +1,13 @@
 import { TypedEventEmitter } from '../utils/events';
 import { TrackKind, TrackSource } from '../protocol/types';
+import { TrackEvent } from '../events';
 
 export interface TrackEvents {
-  muted: (track: Track) => void;
-  unmuted: (track: Track) => void;
-  ended: (track: Track) => void;
-  elementAttached: (element: HTMLMediaElement) => void;
-  elementDetached: (element: HTMLMediaElement) => void;
+  [TrackEvent.Muted]: (track: Track) => void;
+  [TrackEvent.Unmuted]: (track: Track) => void;
+  [TrackEvent.Ended]: (track: Track) => void;
+  [TrackEvent.ElementAttached]: (element: HTMLMediaElement) => void;
+  [TrackEvent.ElementDetached]: (element: HTMLMediaElement) => void;
 }
 
 export abstract class Track extends TypedEventEmitter<TrackEvents> {
@@ -49,7 +50,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     }
 
     this.attachedElements.add(element);
-    this.emit('elementAttached', element);
+    this.emit(TrackEvent.ElementAttached, element);
     return element;
   }
 
@@ -68,7 +69,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   private detachElement(element: HTMLMediaElement): void {
     element.srcObject = null;
     this.attachedElements.delete(element);
-    this.emit('elementDetached', element);
+    this.emit(TrackEvent.ElementDetached, element);
   }
 
   stop(): void {

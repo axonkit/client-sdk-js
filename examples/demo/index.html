@@ -188,7 +188,7 @@
     </div>
 
     <script type="module">
-      import { Room, RoomState, setLogLevel, LogLevel, TrackSource } from "../../dist/axonkit-client.esm.js";
+      import { Room, RoomState, RoomEvent, ParticipantEvent, setLogLevel, LogLevel, TrackSource } from "../../dist/axonkit-client.esm.js";
 
       setLogLevel(LogLevel.DEBUG);
 
@@ -328,21 +328,19 @@
         }
       };
 
-      room.on("connected", () => {
+      room.on(RoomEvent.Connected, () => {
         logMsg("Room connected");
 
-        // Setup local participant events
         if (room.localParticipant) {
-          // Remove potential previous listeners to prevent duplicates
-          room.localParticipant.off("trackPublished", handleLocalTrackPublished);
-          room.localParticipant.off("trackUnpublished", handleLocalTrackUnpublished);
+          room.localParticipant.off(ParticipantEvent.TrackPublished, handleLocalTrackPublished);
+          room.localParticipant.off(ParticipantEvent.TrackUnpublished, handleLocalTrackUnpublished);
 
-          room.localParticipant.on("trackPublished", handleLocalTrackPublished);
-          room.localParticipant.on("trackUnpublished", handleLocalTrackUnpublished);
+          room.localParticipant.on(ParticipantEvent.TrackPublished, handleLocalTrackPublished);
+          room.localParticipant.on(ParticipantEvent.TrackUnpublished, handleLocalTrackUnpublished);
         }
       });
 
-      room.on("disconnected", (reason) => {
+      room.on(RoomEvent.Disconnected, (reason) => {
         logMsg(`Disconnected: ${reason ?? "unknown"}`, "warn");
         $("btnConnect").disabled = false;
         $("btnDisconnect").disabled = true;
@@ -351,7 +349,6 @@
         $("btnScreen").disabled = true;
         $("videoGrid").innerHTML = "";
 
-        // Reset states
         cameraEnabled = false;
         micEnabled = false;
         screenEnabled = false;
@@ -360,19 +357,19 @@
         $("btnScreen").textContent = "Share Screen";
       });
 
-      room.on("reconnecting", () => logMsg("Reconnecting...", "warn"));
-      room.on("reconnected", () => logMsg("Reconnected!"));
+      room.on(RoomEvent.Reconnecting, () => logMsg("Reconnecting...", "warn"));
+      room.on(RoomEvent.Reconnected, () => logMsg("Reconnected!"));
 
-      room.on("participantJoined", (p) => {
+      room.on(RoomEvent.ParticipantJoined, (p) => {
         logMsg(`Participant joined: ${p.identity}`);
       });
 
-      room.on("participantLeft", (p) => {
+      room.on(RoomEvent.ParticipantLeft, (p) => {
         logMsg(`Participant left: ${p.identity}`);
         removeVideoTile(p.sid);
       });
 
-      room.on("trackSubscribed", (track, pub, participant) => {
+      room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         logMsg(`Track subscribed: ${track.kind} from ${participant.identity}`);
         if (track.kind === "video") {
           const el = addVideoTile(participant.sid, participant.identity ?? participant.sid);
@@ -383,7 +380,7 @@
         }
       });
 
-      room.on("trackUnsubscribed", (track, pub, participant) => {
+      room.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
         logMsg(`Track unsubscribed: ${track.kind} from ${participant.identity}`);
         track.detach();
         if (track.kind === "video") {
@@ -391,7 +388,7 @@
         }
       });
 
-      room.on("activeSpeakersChanged", (speakers) => {
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const active = speakers.filter((s) => s.active).map((s) => s.participantSid);
         if (active.length > 0) {
           logMsg(`Active speakers: ${active.join(", ")}`);

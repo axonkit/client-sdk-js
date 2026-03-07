@@ -13,20 +13,22 @@ import type {
 
 const log = getLogger('TransportManager');
 
+export type ProduceCallback = (
+  params: {
+    kind: mediasoupTypes.MediaKind;
+    rtpParameters: mediasoupTypes.RtpParameters;
+    appData: Record<string, unknown>;
+  },
+  callback: (response: { id: string }) => void,
+  errback: (error: Error) => void,
+) => void;
+
 export interface TransportEvents {
   signalReady: (
     sendDC: mediasoupTypes.DataProducer,
     recvDC: mediasoupTypes.DataConsumer,
   ) => void;
-  produce: (
-    params: {
-      kind: mediasoupTypes.MediaKind;
-      rtpParameters: mediasoupTypes.RtpParameters;
-      appData: Record<string, unknown>;
-    },
-    callback: (response: { id: string }) => void,
-    errback: (error: Error) => void,
-  ) => void;
+  connectionFailed: (direction: 'send' | 'recv') => void;
   closed: () => void;
 }
 
@@ -42,11 +44,16 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
   private hasDtlsFingerprints = false;
   private joinResponse: JoinResponse | null = null;
   private certificate: RTCCertificate | null = null;
+  private pendingProduceCallbacks = new Map<string, ProduceCallback>();
 
   constructor(signalClient: SignalClient) {
     super();
     this.device = new mediasoupClient.Device();
     this.signalClient = signalClient;
+  }
+
+  registerProduceCallback(clientTrackId: string, cb: ProduceCallback): void {
+    this.pendingProduceCallbacks.set(clientTrackId, cb);
   }
 
   async generateCertificate(): Promise<DtlsFingerprint[]> {
@@ -171,7 +178,17 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     });
 
     this.sendTransport!.on('produce', (params, callback, errback) => {
-      this.emit('produce', params as any, callback, errback);
+      const clientTrackId = params.appData?.clientTrackId as string | undefined;
+      if (clientTrackId) {
+        const cb = this.pendingProduceCallbacks.get(clientTrackId);
+        if (cb) {
+          this.pendingProduceCallbacks.delete(clientTrackId);
+          cb(params as any, callback, errback);
+          return;
+        }
+      }
+      log.warn('Unhandled produce event, no matching clientTrackId callback');
+      errback(new Error('No produce callback registered for this track'));
     });
 
     this.sendTransport!.on(
@@ -187,6 +204,13 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       },
     );
 
+    this.sendTransport!.on('connectionstatechange', (state: string) => {
+      log.info(`Send transport connection state: ${state}`);
+      if (state === 'failed' || state === 'disconnected') {
+        this.emit('connectionFailed', 'send');
+      }
+    });
+
     // --- Recv transport events ---
     this.recvTransport!.on('connect', ({ dtlsParameters }, callback, errback) => {
       if (this.hasDtlsFingerprints) {
@@ -200,6 +224,13 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       this.connectTransports(pendingConnects)
         .then(() => callback())
         .catch(errback);
+    });
+
+    this.recvTransport!.on('connectionstatechange', (state: string) => {
+      log.info(`Recv transport connection state: ${state}`);
+      if (state === 'failed' || state === 'disconnected') {
+        this.emit('connectionFailed', 'recv');
+      }
     });
   }
 

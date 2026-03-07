@@ -2,11 +2,16 @@
 export { Room } from './Room';
 export type { RoomEvents } from './Room';
 
+// Events
+export { RoomEvent, ParticipantEvent, TrackEvent } from './events';
+
 // Participants
-export { Participant } from './participant/Participant';
-export type { TrackPublication, ParticipantEvents } from './participant/Participant';
+export { Participant, TrackPublication } from './participant/Participant';
+export type { ParticipantEvents } from './participant/Participant';
 export { LocalParticipant } from './participant/LocalParticipant';
 export { RemoteParticipant } from './participant/RemoteParticipant';
+export { LocalTrackPublication } from './participant/LocalTrackPublication';
+export { RemoteTrackPublication } from './participant/RemoteTrackPublication';
 
 // Tracks
 export { Track } from './track/Track';
