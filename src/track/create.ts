@@ -17,9 +17,10 @@ function audioConstraints(opts: AudioCaptureOptions | true): MediaTrackConstrain
     echoCancellation: opts.echoCancellation,
     noiseSuppression: opts.noiseSuppression,
     autoGainControl: opts.autoGainControl,
-    deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+    deviceId: opts.deviceId,
     channelCount: opts.channelCount,
     sampleRate: opts.sampleRate,
+    sampleSize: opts.sampleSize,
   };
 }
 
@@ -30,10 +31,17 @@ function videoConstraints(opts: VideoCaptureOptions | true): MediaTrackConstrain
     height: opts.resolution?.height,
     frameRate: opts.frameRate,
     facingMode: opts.facingMode,
-    deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+    deviceId: opts.deviceId,
   };
 }
 
+/**
+ * Create local audio and video tracks with the given options.
+ *
+ * @param options - Capture options for audio and video. Defaults to
+ *   `{ audio: true, video: true }`.
+ * @returns An array of created local tracks.
+ */
 export async function createLocalTracks(
   options: CreateLocalTracksOptions = { audio: true, video: true },
 ): Promise<LocalTrack[]> {
@@ -54,6 +62,11 @@ export async function createLocalTracks(
   return tracks;
 }
 
+/**
+ * Create a local audio track from the microphone.
+ *
+ * @param options - Audio capture options. Uses defaults when omitted.
+ */
 export async function createLocalAudioTrack(
   options?: AudioCaptureOptions,
 ): Promise<LocalAudioTrack> {
@@ -63,6 +76,11 @@ export async function createLocalAudioTrack(
   return new LocalAudioTrack(track, track.label, constraints);
 }
 
+/**
+ * Create a local video track from the camera.
+ *
+ * @param options - Video capture options. Uses defaults when omitted.
+ */
 export async function createLocalVideoTrack(
   options?: VideoCaptureOptions,
 ): Promise<LocalVideoTrack> {
@@ -72,11 +90,16 @@ export async function createLocalVideoTrack(
   return new LocalVideoTrack(track, track.label, TrackSource.Camera, constraints);
 }
 
+/**
+ * Create local screen share tracks (video and optionally audio).
+ *
+ * @param options - Screen share capture options.
+ */
 export async function createLocalScreenTracks(
   options?: ScreenShareCaptureOptions,
 ): Promise<LocalTrack[]> {
   const constraints: DisplayMediaStreamOptions = {
-    video: {
+    video: options?.video ?? {
       width: options?.resolution?.width,
       height: options?.resolution?.height,
       frameRate: options?.frameRate,

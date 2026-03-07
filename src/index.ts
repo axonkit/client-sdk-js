@@ -31,9 +31,10 @@ export {
   createLocalScreenTracks,
 } from './track/create';
 
-// Options
+// Options — types
 export type {
   RoomOptions,
+  TrackPublishDefaults,
   TrackPublishOptions,
   DataPublishOptions,
   VideoCaptureOptions,
@@ -41,11 +42,35 @@ export type {
   ScreenShareCaptureOptions,
   VideoEncoding,
   VideoResolution,
-  VideoCodec,
+  VideoPresetOptions,
+  AudioPreset,
+  AudioOutputOptions,
   PublishCodecOptions,
   AdaptiveStreamSettings,
   CreateLocalTracksOptions,
   ReconnectPolicy,
+  ScalabilityMode,
+  VideoCodec,
+  BackupVideoCodec,
+  AudioCodec,
+} from './track/options';
+
+// Options — values
+export {
+  VideoPreset,
+  BackupCodecPolicy,
+  AudioPresets,
+  VideoPresets,
+  VideoPresets43,
+  ScreenSharePresets,
+  audioCodecs,
+  videoCodecs,
+  isBackupVideoCodec,
+  defaultVideoCaptureOptions,
+  defaultAudioCaptureOptions,
+  defaultVideoEncoding,
+  defaultScreenShareEncoding,
+  videoSimulcastPresets,
 } from './track/options';
 
 // Protocol types
