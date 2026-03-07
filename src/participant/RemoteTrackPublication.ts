@@ -28,13 +28,10 @@ export class RemoteTrackPublication extends TrackPublication {
     return this.track as RemoteTrack | undefined;
   }
 
-  get subscribed(): boolean {
-    return this.track !== undefined;
-  }
-
   override mute(): void {
     if (!this.consumer) return;
     this.consumer.pause();
+    this.track?.setMuted(true);
     this.rpc?.request('subscription.pause', {
       subscriptionSid: this.consumer.id,
     }).catch(() => {});
@@ -43,6 +40,7 @@ export class RemoteTrackPublication extends TrackPublication {
   override unmute(): void {
     if (!this.consumer) return;
     this.consumer.resume();
+    this.track?.setMuted(false);
     this.rpc?.request('subscription.resume', {
       subscriptionSid: this.consumer.id,
     }).catch(() => {});

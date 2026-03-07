@@ -27,10 +27,4 @@ export class RemoteTrack extends Track {
       el.srcObject = stream;
     }
   }
-
-  setMuted(muted: boolean): void {
-    if (this.isMuted === muted) return;
-    this.isMuted = muted;
-    this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
-  }
 }

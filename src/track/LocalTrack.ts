@@ -38,13 +38,6 @@ export class LocalTrack extends Track {
     this._producer = p;
   }
 
-  setMuted(value: boolean): void {
-    if (this.isMuted !== value) {
-      super.setMuted(value);
-      log.debug(`Track ${this.name} ${value ? 'unmuted' : 'muted'}`);
-    }
-  }
-
   async restart(constraints?: MediaTrackConstraints): Promise<void> {
     if (constraints) {
       this.constraints = constraints;
