@@ -82,9 +82,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   }
 
   /** @internal */
-  startMonitor(): void {
-    // overridden by subclasses
-  }
+  abstract startMonitor(): void;
 
   /** @internal */
   stopMonitor(): void {

@@ -53,17 +53,6 @@ export class RemoteTrack extends Track {
     }
   }
 
-  /** Start receiving and monitoring. */
-  start(): void {
-    this.startMonitor();
-    this.consumer?.resume();
-  }
-
-  override stop(): void {
-    this.stopMonitor();
-    this.consumer?.pause();
-  }
-
   /** @internal */
   override stopMonitor(): void {
     super.stopMonitor();
