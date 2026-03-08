@@ -6,7 +6,7 @@ import { RemoteAudioTrack } from '../track/RemoteAudioTrack';
 import { RemoteVideoTrack } from '../track/RemoteVideoTrack';
 import { TransportManager } from '../transport/TransportManager';
 import { RPCClient } from '../signal/RPCClient';
-import { TrackKind, TrackSource } from '../protocol/types';
+import { TrackKind, TrackSource, StreamState } from '../protocol/types';
 import type {
   ParticipantInfo,
   TrackInfo,
@@ -166,15 +166,15 @@ export class RemoteParticipant extends Participant {
     });
 
     consumer.observer.on('pause', () => {
-      track.setMuted(true);
-      publication.muted = true;
-      this.emit(ParticipantEvent.TrackMuted, publication);
+      track.setStreamState(StreamState.Paused);
+      publication.streamState = StreamState.Paused;
+      this.emit(ParticipantEvent.TrackStreamStateChanged, publication, StreamState.Paused);
     });
 
     consumer.observer.on('resume', () => {
-      track.setMuted(false);
-      publication.muted = false;
-      this.emit(ParticipantEvent.TrackUnmuted, publication);
+      track.setStreamState(StreamState.Active);
+      publication.streamState = StreamState.Active;
+      this.emit(ParticipantEvent.TrackStreamStateChanged, publication, StreamState.Active);
     });
 
     consumer.observer.on('close', () => {

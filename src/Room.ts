@@ -11,6 +11,7 @@ import {
   RoomState,
   DisconnectReason,
   ParticipantState,
+  StreamState,
   type RoomInfo,
   type ServerInfo,
   type JoinRequest,
@@ -99,6 +100,7 @@ export interface RoomEvents {
   [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.VideoPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.ChatMessage]: (message: ChatMessage, participant?: Participant) => void;
+  [RoomEvent.TrackStreamStateChanged]: (publication: TrackPublication, streamState: StreamState, participant: RemoteParticipant) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -1077,6 +1079,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     });
     rp.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, rp);
+    });
+    rp.on(ParticipantEvent.TrackStreamStateChanged, (pub, streamState) => {
+      this.emit(RoomEvent.TrackStreamStateChanged, pub, streamState, rp);
     });
     rp.on(ParticipantEvent.DataReceived, (data) => {
       this.emit(RoomEvent.DataReceived, data, rp);

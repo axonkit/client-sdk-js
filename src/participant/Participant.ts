@@ -5,6 +5,7 @@ import {
   ConnectionQuality,
   ParticipantState,
   ParticipantKind,
+  StreamState,
 } from '../protocol/types';
 import type { Track } from '../track/Track';
 import type { LocalAudioTrack } from '../track/LocalAudioTrack';
@@ -129,6 +130,7 @@ export interface ParticipantEvents {
   [ParticipantEvent.IsSpeakingChanged]: (speaking: boolean) => void;
   [ParticipantEvent.ConnectionQualityChanged]: (quality: ConnectionQuality) => void;
   [ParticipantEvent.PermissionsChanged]: (prevPermissions?: ParticipantPermission) => void;
+  [ParticipantEvent.TrackStreamStateChanged]: (publication: TrackPublication, streamState: StreamState) => void;
   [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
   [ParticipantEvent.ChatMessage]: (message: ChatMessage) => void;
 }

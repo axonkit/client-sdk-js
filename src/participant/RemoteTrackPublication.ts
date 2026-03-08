@@ -3,7 +3,7 @@ import { TrackPublication, SubscriptionStatus, PermissionStatus } from './Partic
 import type { RemoteTrack } from '../track/RemoteTrack';
 import type { RPCClient } from '../signal/RPCClient';
 import type { TrackSource, TrackInfo, VideoLayer } from '../protocol/types';
-import { TrackKind, VideoQuality } from '../protocol/types';
+import { TrackKind, VideoQuality, StreamState } from '../protocol/types';
 import { getLogger } from '../utils/logger';
 
 const log = getLogger('RemoteTrackPublication');
@@ -16,6 +16,8 @@ export class RemoteTrackPublication extends TrackPublication {
 
   /** @internal */
   protected allowed = true;
+
+  streamState: StreamState = StreamState.Active;
 
   private _subscribed = true;
   private _videoQuality?: VideoQuality;
@@ -73,24 +75,6 @@ export class RemoteTrackPublication extends TrackPublication {
   /** Whether the server is enabled to send data for this track. */
   override get isEnabled(): boolean {
     return this._enabled;
-  }
-
-  override mute(): void {
-    if (!this.consumer) return;
-    this.consumer.pause();
-    this.track?.setMuted(true);
-    this.rpc?.request('subscription.pause', {
-      subscriptionSid: this.consumer.id,
-    }).catch(() => {});
-  }
-
-  override unmute(): void {
-    if (!this.consumer) return;
-    this.consumer.resume();
-    this.track?.setMuted(false);
-    this.rpc?.request('subscription.resume', {
-      subscriptionSid: this.consumer.id,
-    }).catch(() => {});
   }
 
   /**

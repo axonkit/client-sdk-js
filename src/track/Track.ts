@@ -1,5 +1,5 @@
 import { TypedEventEmitter } from '../utils/events';
-import { TrackKind, TrackSource } from '../protocol/types';
+import { TrackKind, TrackSource, StreamState } from '../protocol/types';
 import { TrackEvent } from '../events';
 
 export interface TrackEvents {
@@ -17,6 +17,7 @@ export interface TrackEvents {
   [TrackEvent.VisibilityChanged]: (visible: boolean, track: Track) => void;
   [TrackEvent.VideoDimensionsChanged]: (dimensions: TrackDimensions, track: Track) => void;
   [TrackEvent.AudioSilenceDetected]: () => void;
+  [TrackEvent.StreamStateChanged]: (track: Track, streamState: StreamState) => void;
   [TrackEvent.TimeSyncUpdate]: (update: { timestamp: number; rtpTimestamp: number }) => void;
 }
 
@@ -29,6 +30,8 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   sid?: string;
   mediaStreamTrack: MediaStreamTrack;
   isMuted = false;
+
+  private _streamState: StreamState = StreamState.Active;
 
   attachedElements: HTMLMediaElement[] = [];
 
@@ -64,6 +67,23 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     this.isMuted = value;
     this.mediaStreamTrack.enabled = !value;
     this.emit(value ? TrackEvent.Muted : TrackEvent.Unmuted, this);
+  }
+
+  /**
+   * The current stream state of the track.
+   * {@link StreamState.Active} means the server is actively forwarding media;
+   * {@link StreamState.Paused} means the server has temporarily stopped forwarding (e.g. bandwidth limits).
+   * This is separate from `isMuted`, which reflects the publisher's intent.
+   */
+  get streamState(): StreamState {
+    return this._streamState;
+  }
+
+  /** @internal */
+  setStreamState(state: StreamState): void {
+    if (this._streamState === state) return;
+    this._streamState = state;
+    this.emit(TrackEvent.StreamStateChanged, this, state);
   }
 
   /** @internal */

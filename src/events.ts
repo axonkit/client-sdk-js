@@ -215,6 +215,15 @@ export enum RoomEvent {
    * {@link RoomEvent.AudioPlaybackStatusChanged} but for video.
    */
   VideoPlaybackStatusChanged = 'videoPlaybackStatusChanged',
+
+  /**
+   * The stream state of a remote track has changed (e.g. the server
+   * paused or resumed forwarding media).  This is distinct from
+   * {@link RoomEvent.TrackMuted} which indicates the publisher's intent.
+   *
+   * args: `(publication: RemoteTrackPublication, streamState: StreamState, participant: RemoteParticipant)`
+   */
+  TrackStreamStateChanged = 'trackStreamStateChanged',
 }
 
 /**
@@ -297,6 +306,13 @@ export enum ParticipantEvent {
 
   /** The participant's permissions have changed. */
   PermissionsChanged = 'permissionsChanged',
+
+  /**
+   * The stream state of a remote track changed (server paused/resumed forwarding).
+   *
+   * args: `(publication: RemoteTrackPublication, streamState: StreamState)`
+   */
+  TrackStreamStateChanged = 'trackStreamStateChanged',
 
   /** Data received from this participant. */
   DataReceived = 'dataReceived',
@@ -398,6 +414,14 @@ export enum TrackEvent {
    * This may indicate a hardware issue.
    */
   AudioSilenceDetected = 'audioSilenceDetected',
+
+  /**
+   * The stream state of this track changed (server paused/resumed forwarding).
+   * Only emitted on remote tracks.
+   *
+   * args: `(track: Track, streamState: StreamState)`
+   */
+  StreamStateChanged = 'streamStateChanged',
 
   /**
    * Fired when a new time-sync update is available for a remote track.

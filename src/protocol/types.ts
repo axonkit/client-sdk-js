@@ -45,6 +45,12 @@ export enum AudioTrackFeature {
   EnhancedNoiseCancellation = 'enhanced_noise_cancellation',
 }
 
+export enum StreamState {
+  Active = 'active',
+  Paused = 'paused',
+  Unknown = 'unknown',
+}
+
 export enum DisconnectReason {
   UnknownReason = 0,
   ClientInitiated = 1,

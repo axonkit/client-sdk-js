@@ -86,6 +86,7 @@ export {
   ParticipantState,
   ParticipantKind,
   ConnectionQuality,
+  StreamState,
   AudioTrackFeature,
 } from './protocol/types';
 
