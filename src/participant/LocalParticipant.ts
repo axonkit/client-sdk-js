@@ -19,7 +19,7 @@ import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 import type { ChatMessage, SendTextOptions, StreamTextOptions, StreamBytesOptions, SendFileOptions, PerformRpcParams, RpcInvocationData } from '../types';
-import { DataStreamManager, TextStreamWriter, ByteStreamWriter } from '../data-stream/DataStreamManager';
+import { DataStreamSender, TextStreamWriter, ByteStreamWriter } from '../data-stream/DataStreamManager';
 import { RpcError, byteLength, MAX_RPC_PAYLOAD_BYTES } from '../rpc';
 
 const log = getLogger('LocalParticipant');
@@ -30,7 +30,7 @@ export class LocalParticipant extends Participant {
   private producers = new Map<string, mediasoupTypes.Producer>();
   private dataProducers = new Map<string, mediasoupTypes.DataProducer>();
   private trackSidMap = new Map<string, string>();
-  private dataStreamManager?: DataStreamManager;
+  private dataStreamSender?: DataStreamSender;
 
   private _lastCameraError?: Error;
   private _lastMicrophoneError?: Error;
@@ -48,7 +48,7 @@ export class LocalParticipant extends Participant {
   init(rpc: RPCClient, transportManager: TransportManager): void {
     this.rpc = rpc;
     this.transportManager = transportManager;
-    this.dataStreamManager = new DataStreamManager(rpc);
+    this.dataStreamSender = new DataStreamSender(rpc, transportManager);
   }
 
   /** @internal */
@@ -447,34 +447,34 @@ export class LocalParticipant extends Participant {
    * Send a complete text message to participants via data stream.
    */
   async sendText(text: string, options?: SendTextOptions): Promise<{ id: string }> {
-    if (!this.dataStreamManager) throw new Error('Not connected');
-    return this.dataStreamManager.sendText(text, options);
+    if (!this.dataStreamSender) throw new Error('Not connected');
+    return this.dataStreamSender.sendText(text, options);
   }
 
   /**
    * Open an incremental text stream to participants.
    * Returns a writer that can be used to send text chunks.
    */
-  streamText(options?: StreamTextOptions): TextStreamWriter {
-    if (!this.dataStreamManager) throw new Error('Not connected');
-    return this.dataStreamManager.streamText(options);
+  async streamText(options?: StreamTextOptions): Promise<TextStreamWriter> {
+    if (!this.dataStreamSender) throw new Error('Not connected');
+    return this.dataStreamSender.streamText(options);
   }
 
   /**
    * Send a file to participants via data stream.
    */
   async sendFile(file: File, options?: SendFileOptions): Promise<{ id: string }> {
-    if (!this.dataStreamManager) throw new Error('Not connected');
-    return this.dataStreamManager.sendFile(file, options);
+    if (!this.dataStreamSender) throw new Error('Not connected');
+    return this.dataStreamSender.sendFile(file, options);
   }
 
   /**
    * Open an incremental byte stream to participants.
    * Returns a writer that can be used to send byte chunks.
    */
-  streamBytes(options?: StreamBytesOptions): ByteStreamWriter {
-    if (!this.dataStreamManager) throw new Error('Not connected');
-    return this.dataStreamManager.streamBytes(options);
+  async streamBytes(options?: StreamBytesOptions): Promise<ByteStreamWriter> {
+    if (!this.dataStreamSender) throw new Error('Not connected');
+    return this.dataStreamSender.streamBytes(options);
   }
 
   // --- P2P RPC ---
@@ -585,6 +585,7 @@ export class LocalParticipant extends Participant {
     for (const [, dp] of this.dataProducers) {
       dp.close();
     }
+    this.dataStreamSender?.close();
     if (!keepTracks) {
       for (const [, pub] of this.trackPublications) {
         if (pub.track instanceof LocalTrack) {

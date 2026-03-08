@@ -209,20 +209,6 @@ export enum RoomEvent {
   ChatMessage = 'chatMessage',
 
   /**
-   * An incoming text stream has been received.
-   *
-   * args: `(reader: ReadableStream<string>, info: TextStreamInfo, participantIdentity: string)`
-   */
-  TextStreamReceived = 'textStreamReceived',
-
-  /**
-   * An incoming byte stream has been received.
-   *
-   * args: `(reader: ReadableStream<Uint8Array>, info: ByteStreamInfo, participantIdentity: string)`
-   */
-  ByteStreamReceived = 'byteStreamReceived',
-
-  /**
    * An RPC method has been invoked by a remote participant.
    * Use `room.registerRpcMethod` to handle RPC calls.
    */

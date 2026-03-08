@@ -115,12 +115,20 @@ export type {
   BaseStreamInfo,
   ByteStreamInfo,
   TextStreamInfo,
+  StreamSenderInfo,
+  TextStreamHandler,
+  ByteStreamHandler,
   PerformRpcParams,
   RpcInvocationData,
 } from './types';
 
-// Data Stream Writers
-export { TextStreamWriter, ByteStreamWriter } from './data-stream/DataStreamManager';
+// Data Stream — Writers and Readers
+export {
+  TextStreamWriter,
+  ByteStreamWriter,
+  TextStreamReader,
+  ByteStreamReader,
+} from './data-stream/DataStreamManager';
 
 // Utilities — Logger
 export { setLogLevel, setLogger, setLogExtension, LogLevel } from './utils/logger';

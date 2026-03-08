@@ -15,6 +15,7 @@ import type {
 } from '../protocol/types';
 import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
+import { STREAM_DATA_LABEL, type DataStreamReceiver } from '../data-stream/DataStreamManager';
 
 const log = getLogger('RemoteParticipant');
 
@@ -23,11 +24,13 @@ export class RemoteParticipant extends Participant {
   private rpc!: RPCClient;
   private consumers = new Map<string, mediasoupTypes.Consumer>();
   private dataConsumers = new Map<string, mediasoupTypes.DataConsumer>();
+  private streamReceiver?: DataStreamReceiver;
 
   /** @internal */
-  init(transportManager: TransportManager, rpc: RPCClient): void {
+  init(transportManager: TransportManager, rpc: RPCClient, streamReceiver?: DataStreamReceiver): void {
     this.transportManager = transportManager;
     this.rpc = rpc;
+    this.streamReceiver = streamReceiver;
   }
 
   /** @internal */
@@ -172,12 +175,21 @@ export class RemoteParticipant extends Participant {
 
     this.dataConsumers.set(req.dataSubscriptionSid, dataConsumer);
 
-    dataConsumer.on('message', (data: ArrayBuffer) => {
-      log.debug(`Data message from ${this.sid} subscription ${req.dataSubscriptionSid}`);
-      this.emit(ParticipantEvent.DataReceived, data);
-    });
+    if (req.label === STREAM_DATA_LABEL && this.streamReceiver) {
+      const receiver = this.streamReceiver;
+      const senderIdentity = this.identity ?? '';
+      const senderSid = this.sid;
+      dataConsumer.on('message', (data: ArrayBuffer) => {
+        receiver.handleMessage(data, senderIdentity, senderSid);
+      });
+    } else {
+      dataConsumer.on('message', (data: ArrayBuffer) => {
+        log.debug(`Data message from ${this.sid} subscription ${req.dataSubscriptionSid}`);
+        this.emit(ParticipantEvent.DataReceived, data);
+      });
+    }
 
-    log.info(`Data subscription created: ${req.dataSubscriptionSid}`);
+    log.info(`Data subscription created: ${req.dataSubscriptionSid} (label=${req.label})`);
     return { ok: true };
   }
 

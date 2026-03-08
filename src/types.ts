@@ -102,6 +102,26 @@ export interface ByteStreamInfo extends BaseStreamInfo {
 export interface TextStreamInfo extends BaseStreamInfo {}
 
 /**
+ * Identifies the participant who sent a data stream.
+ */
+export interface StreamSenderInfo {
+  identity: string;
+  sid: string;
+}
+
+import type { TextStreamReader, ByteStreamReader } from './data-stream/DataStreamManager';
+
+/**
+ * Handler called when an incoming text stream is received on a registered topic.
+ */
+export type TextStreamHandler = (reader: TextStreamReader, sender: StreamSenderInfo) => void;
+
+/**
+ * Handler called when an incoming byte stream is received on a registered topic.
+ */
+export type ByteStreamHandler = (reader: ByteStreamReader, sender: StreamSenderInfo) => void;
+
+/**
  * Parameters for initiating a P2P RPC call.
  */
 export interface PerformRpcParams {

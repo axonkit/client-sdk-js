@@ -45,8 +45,8 @@ import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
 import { StatsCollector } from './stats/StatsCollector';
 import { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
-import { IncomingStreamAssembler } from './data-stream/DataStreamManager';
-import type { ChatMessage, RpcInvocationData } from './types';
+import { DataStreamReceiver } from './data-stream/DataStreamManager';
+import type { ChatMessage, RpcInvocationData, TextStreamHandler, ByteStreamHandler } from './types';
 import { RpcError } from './rpc';
 
 /**
@@ -98,8 +98,6 @@ export interface RoomEvents {
   [RoomEvent.ConnectionQualityChanged]: (quality: string, participant: any) => void;
   [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.ChatMessage]: (message: any, participant?: any) => void;
-  [RoomEvent.TextStreamReceived]: (reader: ReadableStream<string>, info: any, participantIdentity: string) => void;
-  [RoomEvent.ByteStreamReceived]: (reader: ReadableStream<Uint8Array>, info: any, participantIdentity: string) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -135,7 +133,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private pageLeaveHandler?: () => void;
   private deviceChangeHandler?: () => void;
   private _canPlaybackAudio = true;
-  private streamAssembler = new IncomingStreamAssembler();
+  private dataStreamReceiver = new DataStreamReceiver();
 
   constructor(options?: RoomOptions) {
     super();
@@ -284,7 +282,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       if (readyResp?.otherParticipants) {
         for (const info of readyResp.otherParticipants) {
           const rp = RemoteParticipant.fromInfo(info);
-          rp.init(this.transportManager, this.rpcClient);
+          rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
           this._remoteParticipants.set(info.sid, rp);
           this.wireRemoteParticipantEvents(rp);
         }
@@ -638,6 +636,36 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this._localParticipant.rpcHandlers.delete(method);
   }
 
+  // --- Data Stream Handlers ---
+
+  /**
+   * Register a handler for incoming text streams on a specific topic.
+   */
+  registerTextStreamHandler(topic: string, handler: TextStreamHandler): void {
+    this.dataStreamReceiver.registerTextStreamHandler(topic, handler);
+  }
+
+  /**
+   * Unregister a previously registered text stream handler.
+   */
+  unregisterTextStreamHandler(topic: string): void {
+    this.dataStreamReceiver.unregisterTextStreamHandler(topic);
+  }
+
+  /**
+   * Register a handler for incoming byte streams on a specific topic.
+   */
+  registerByteStreamHandler(topic: string, handler: ByteStreamHandler): void {
+    this.dataStreamReceiver.registerByteStreamHandler(topic, handler);
+  }
+
+  /**
+   * Unregister a previously registered byte stream handler.
+   */
+  unregisterByteStreamHandler(topic: string): void {
+    this.dataStreamReceiver.unregisterByteStreamHandler(topic);
+  }
+
   // --- Prepare Connection (pre-warm) ---
 
   async prepareConnection(url: string, token: string): Promise<void> {
@@ -666,6 +694,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this._localParticipant.updateFromInfo(jr.participant);
     }
     this._localParticipant.init(this.rpcClient, this.transportManager);
+    this.dataStreamReceiver.setLocalIdentity(jr.participant.identity);
   }
 
   private registerRPCHandlers(): void {
@@ -735,14 +764,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.handleChatMessage(body);
     });
 
-    this.rpcClient.onNotification('dataStream.open', (body: any) => {
-      this.streamAssembler.handleOpen(body, body.senderIdentity ?? '');
-    });
-
-    this.rpcClient.onNotification('dataStream.chunk', (body: any) => {
-      this.streamAssembler.handleChunk(body, body.senderIdentity ?? '');
-    });
-
     this.rpcClient.onNotification('rpc.invoke', (body: any) => {
       this._localParticipant.handleRpcInvocation(body);
     });
@@ -750,21 +771,13 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this.rpcClient.onNotification('rpc.response', (body: any) => {
       this._localParticipant.handleRpcResponse(body);
     });
-
-    this.streamAssembler.onTextStream((info, reader, participantIdentity) => {
-      this.emit(RoomEvent.TextStreamReceived, reader, info, participantIdentity);
-    });
-
-    this.streamAssembler.onByteStream((info, reader, participantIdentity) => {
-      this.emit(RoomEvent.ByteStreamReceived, reader, info, participantIdentity);
-    });
   }
 
   // --- Notification Handlers ---
 
   private handleParticipantJoined(body: ParticipantJoinedNotification): void {
     const rp = RemoteParticipant.fromInfo(body.participant);
-    rp.init(this.transportManager, this.rpcClient);
+    rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
     this._remoteParticipants.set(rp.sid, rp);
     this.wireRemoteParticipantEvents(rp);
     this.emit(RoomEvent.ParticipantJoined, rp);

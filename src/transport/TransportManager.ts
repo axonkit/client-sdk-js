@@ -23,6 +23,17 @@ export type ProduceCallback = (
   errback: (error: Error) => void,
 ) => void;
 
+export type ProduceDataCallback = (
+  params: {
+    sctpStreamParameters: mediasoupTypes.SctpStreamParameters;
+    label?: string;
+    protocol?: string;
+    appData: Record<string, unknown>;
+  },
+  callback: (response: { id: string }) => void,
+  errback: (error: Error) => void,
+) => void;
+
 export interface TransportEvents {
   signalReady: (
     sendDC: mediasoupTypes.DataProducer,
@@ -45,6 +56,7 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
   private joinResponse: JoinResponse | null = null;
   private certificate: RTCCertificate | null = null;
   private pendingProduceCallbacks = new Map<string, ProduceCallback>();
+  private pendingProduceDataCallbacks = new Map<string, ProduceDataCallback>();
 
   constructor(signalClient: SignalClient) {
     super();
@@ -54,6 +66,10 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
 
   registerProduceCallback(clientTrackId: string, cb: ProduceCallback): void {
     this.pendingProduceCallbacks.set(clientTrackId, cb);
+  }
+
+  registerProduceDataCallback(clientTrackId: string, cb: ProduceDataCallback): void {
+    this.pendingProduceDataCallbacks.set(clientTrackId, cb);
   }
 
   async generateCertificate(): Promise<DtlsFingerprint[]> {
@@ -193,14 +209,22 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
 
     this.sendTransport!.on(
       'producedata',
-      (params, callback, _errback) => {
-        // For signal DataChannel, use the info from JoinResponse directly
+      (params, callback, errback) => {
         if (params.label === this.joinResponse?.signal.send.label) {
           callback({ id: this.joinResponse!.signal.send.channelSid });
           return;
         }
-        // For user data channels, emit event for Room to handle
-        callback({ id: params.label ?? '' });
+        const clientTrackId = (params.appData as Record<string, unknown>)?.clientTrackId as string | undefined;
+        if (clientTrackId) {
+          const cb = this.pendingProduceDataCallbacks.get(clientTrackId);
+          if (cb) {
+            this.pendingProduceDataCallbacks.delete(clientTrackId);
+            cb(params as any, callback, errback);
+            return;
+          }
+        }
+        log.warn('Unhandled producedata event, no matching callback');
+        errback(new Error('No producedata callback registered'));
       },
     );
 
