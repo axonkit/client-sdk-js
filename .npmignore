@@ -1,0 +1,10 @@
+.github
+docs
+examples
+node_modules
+tsconfig.json
+.prettierrc
+.prettierignore
+.browserslistrc
+.size-limit.cjs
+typedoc.json

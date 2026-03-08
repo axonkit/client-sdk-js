@@ -3,6 +3,7 @@ import { TrackKind, TrackSource } from '../protocol/types';
 import { TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { types as mediasoupTypes } from 'mediasoup-client';
+import type { TrackProcessor, ProcessorOptions } from './processor/types';
 
 const log = getLogger('LocalTrack');
 
@@ -13,6 +14,7 @@ export interface LocalTrackEvents extends TrackEvents {
 export class LocalTrack extends Track {
   protected constraints?: MediaTrackConstraints;
   private _producer?: mediasoupTypes.Producer;
+  private _processor?: TrackProcessor;
 
   constructor(
     kind: TrackKind,
@@ -40,6 +42,44 @@ export class LocalTrack extends Track {
     this._producer = p;
   }
 
+  /** Returns the currently active processor, or `undefined`. */
+  getProcessor(): TrackProcessor | undefined {
+    return this._processor;
+  }
+
+  /**
+   * Set a {@link TrackProcessor} on this track. The processor transforms the
+   * underlying `MediaStreamTrack` and the processed output is sent to the
+   * producer instead. Pass `undefined` to remove the current processor.
+   *
+   * @experimental
+   */
+  async setProcessor(processor: TrackProcessor | undefined): Promise<void> {
+    if (this._processor) {
+      await this._processor.destroy();
+      this._processor = undefined;
+    }
+
+    if (!processor) {
+      if (this._producer) {
+        await this._producer.replaceTrack({ track: this.mediaStreamTrack });
+      }
+      return;
+    }
+
+    const opts: ProcessorOptions = {
+      kind: this.kind,
+      track: this.mediaStreamTrack,
+    };
+    await processor.init(opts);
+
+    this._processor = processor;
+
+    if (processor.processedTrack && this._producer) {
+      await this._producer.replaceTrack({ track: processor.processedTrack });
+    }
+  }
+
   async restart(constraints?: MediaTrackConstraints): Promise<void> {
     if (constraints) {
       this.constraints = constraints;
@@ -65,11 +105,18 @@ export class LocalTrack extends Track {
     const oldTrack = this.mediaStreamTrack;
     this.mediaStreamTrack = newTrack;
 
-    if (this._producer) {
-      await this._producer.replaceTrack({ track: newTrack });
+    let trackForProducer = newTrack;
+    if (this._processor) {
+      await this._processor.restart({ kind: this.kind, track: newTrack });
+      if (this._processor.processedTrack) {
+        trackForProducer = this._processor.processedTrack;
+      }
     }
 
-    // Reattach to all existing elements
+    if (this._producer) {
+      await this._producer.replaceTrack({ track: trackForProducer });
+    }
+
     for (const el of this.attachedElements) {
       const stream = new MediaStream([newTrack]);
       el.srcObject = stream;
@@ -79,6 +126,10 @@ export class LocalTrack extends Track {
   }
 
   stop(): void {
+    if (this._processor) {
+      this._processor.destroy().catch(() => {});
+      this._processor = undefined;
+    }
     super.stop();
     log.debug(`Track ${this.name} stopped`);
   }

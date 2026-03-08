@@ -1,12 +1,12 @@
 // Core
 export { Room } from './Room';
-export type { RoomEvents } from './Room';
+export type { RoomEvents, ConnectOptions } from './Room';
 
 // Events
 export { RoomEvent, ParticipantEvent, TrackEvent } from './events';
 
 // Participants
-export { Participant, TrackPublication } from './participant/Participant';
+export { Participant, TrackPublication, SubscriptionStatus } from './participant/Participant';
 export type { ParticipantEvents } from './participant/Participant';
 export { LocalParticipant } from './participant/LocalParticipant';
 export { RemoteParticipant } from './participant/RemoteParticipant';
@@ -30,6 +30,9 @@ export {
   createLocalVideoTrack,
   createLocalScreenTracks,
 } from './track/create';
+
+// Track Processor
+export type { TrackProcessor, ProcessorOptions } from './track/processor/types';
 
 // Options — types
 export type {
@@ -99,10 +102,59 @@ export type {
 // Errors
 export { AxonError, ConnectionError, TimeoutError, ErrorCode } from './protocol/errors';
 
-// Utilities
-export { setLogLevel, setLogger, LogLevel } from './utils/logger';
-export type { LoggerInterface } from './utils/logger';
+// RPC
+export { RpcError, MAX_RPC_PAYLOAD_BYTES } from './rpc';
+
+// Types — Chat, Data Stream, RPC
+export type {
+  ChatMessage,
+  SendTextOptions,
+  StreamTextOptions,
+  StreamBytesOptions,
+  SendFileOptions,
+  BaseStreamInfo,
+  ByteStreamInfo,
+  TextStreamInfo,
+  PerformRpcParams,
+  RpcInvocationData,
+} from './types';
+
+// Data Stream Writers
+export { TextStreamWriter, ByteStreamWriter } from './data-stream/DataStreamManager';
+
+// Utilities — Logger
+export { setLogLevel, setLogger, setLogExtension, LogLevel } from './utils/logger';
+export type { LoggerInterface, LogExtension } from './utils/logger';
 export { TypedEventEmitter } from './utils/events';
+
+// Utilities — Browser
+export {
+  isBrowserSupported,
+  supportsAdaptiveStream,
+  supportsDynacast,
+  supportsAV1,
+  supportsVP9,
+  supportsAudioOutputSelection,
+  getBrowser,
+  getEmptyAudioStreamTrack,
+  getEmptyVideoStreamTrack,
+  facingModeFromDeviceLabel,
+  facingModeFromLocalTrack,
+  createAudioAnalyser,
+} from './utils/browser';
+export type { BrowserDetails, AudioAnalyserOptions } from './utils/browser';
+
+// Utilities — Device Failure
+export { MediaDeviceFailure } from './utils/deviceFailure';
+export type { DeviceFailureKind } from './utils/deviceFailure';
+
+// Reconnect Policy
+export { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
+export type { ReconnectContext } from './room/DefaultReconnectPolicy';
+
+// Connection Diagnostics
+export { ConnectionCheck, CheckStatus } from './connectionHelper/ConnectionCheck';
+export type { CheckInfo } from './connectionHelper/ConnectionCheck';
 
 // Version
 export { VERSION, PROTOCOL_VERSION } from './version';

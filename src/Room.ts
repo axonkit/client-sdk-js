@@ -5,6 +5,7 @@ import { RPCClient } from './signal/RPCClient';
 import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
 import { RemoteParticipant } from './participant/RemoteParticipant';
+import type { TrackPublication } from './participant/Participant';
 import { VERSION, PROTOCOL_VERSION } from './version';
 import {
   RoomState,
@@ -37,44 +38,68 @@ import {
   type ActiveSpeaker,
   type ReconnectResponse,
 } from './protocol/types';
-import type { RoomOptions, ReconnectPolicy } from './track/options';
+import type { RoomOptions, ReconnectPolicy, AdaptiveStreamSettings } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
 import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
 import { StatsCollector } from './stats/StatsCollector';
+import { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
+import { IncomingStreamAssembler } from './data-stream/DataStreamManager';
+import type { ChatMessage, RpcInvocationData } from './types';
+import { RpcError } from './rpc';
 
+/**
+ * Options passed when connecting to a room.
+ */
 export interface ConnectOptions {
+  /** Display name used for the local participant. */
   displayName?: string;
+  /** Room name. */
   roomName?: string;
+  /** Whether to auto-subscribe to published tracks (overrides RoomOptions). */
+  autoSubscribe?: boolean;
+  /** Timeout in milliseconds to wait for peer connections. */
+  peerConnectionTimeout?: number;
+  /** Additional RTCConfiguration for the peer connections. */
+  rtcConfig?: RTCConfiguration;
 }
 
 const log = getLogger('Room');
-
-const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
-  maxRetries: 10,
-  initialDelay: 1000,
-  maxDelay: 30000,
-};
 
 export interface RoomEvents {
   [RoomEvent.Connected]: () => void;
   [RoomEvent.Disconnected]: (reason?: DisconnectReason) => void;
   [RoomEvent.Reconnecting]: () => void;
   [RoomEvent.Reconnected]: () => void;
+  [RoomEvent.ConnectionStateChanged]: (state: RoomState) => void;
+  [RoomEvent.SignalReconnecting]: () => void;
+  [RoomEvent.MediaDevicesChanged]: () => void;
+  [RoomEvent.MediaDevicesError]: (error: Error) => void;
   [RoomEvent.ParticipantJoined]: (participant: RemoteParticipant) => void;
   [RoomEvent.ParticipantLeft]: (participant: RemoteParticipant, reason?: string) => void;
   [RoomEvent.ParticipantUpdated]: (participant: RemoteParticipant) => void;
+  [RoomEvent.ParticipantMetadataChanged]: (prevMetadata: string | undefined, participant: any) => void;
+  [RoomEvent.ParticipantNameChanged]: (name: string, participant: any) => void;
+  [RoomEvent.ParticipantAttributesChanged]: (changed: Record<string, string>, participant: any) => void;
   [RoomEvent.TrackPublished]: (publication: any, participant: RemoteParticipant) => void;
   [RoomEvent.TrackUnpublished]: (publication: any, participant: RemoteParticipant) => void;
   [RoomEvent.TrackSubscribed]: (track: any, publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackSubscriptionFailed]: (trackSid: string, participant: RemoteParticipant) => void;
   [RoomEvent.TrackUnsubscribed]: (track: any, publication: any, participant: RemoteParticipant) => void;
-  [RoomEvent.TrackMuted]: (publication: any, participant: RemoteParticipant) => void;
-  [RoomEvent.TrackUnmuted]: (publication: any, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackMuted]: (publication: any, participant: any) => void;
+  [RoomEvent.TrackUnmuted]: (publication: any, participant: any) => void;
+  [RoomEvent.LocalTrackPublished]: (publication: TrackPublication, participant: LocalParticipant) => void;
+  [RoomEvent.LocalTrackUnpublished]: (publication: TrackPublication, participant: LocalParticipant) => void;
+  [RoomEvent.LocalAudioSilenceDetected]: () => void;
   [RoomEvent.ActiveSpeakersChanged]: (speakers: ActiveSpeaker[]) => void;
   [RoomEvent.RoomUpdated]: (room: RoomInfo) => void;
   [RoomEvent.DataReceived]: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
   [RoomEvent.ConnectionQualityChanged]: (quality: string, participant: any) => void;
+  [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
+  [RoomEvent.ChatMessage]: (message: any, participant?: any) => void;
+  [RoomEvent.TextStreamReceived]: (reader: ReadableStream<string>, info: any, participantIdentity: string) => void;
+  [RoomEvent.ByteStreamReceived]: (reader: ReadableStream<Uint8Array>, info: any, participantIdentity: string) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -104,15 +129,19 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   private reconnectAttempts = 0;
   private reconnectPolicy: ReconnectPolicy;
+  private _reconnectPolicy: DefaultReconnectPolicy;
 
   private statsCollector?: StatsCollector;
   private pageLeaveHandler?: () => void;
+  private deviceChangeHandler?: () => void;
+  private _canPlaybackAudio = true;
+  private streamAssembler = new IncomingStreamAssembler();
 
   constructor(options?: RoomOptions) {
     super();
     this._options = options ?? {};
-    this.reconnectPolicy = options?.reconnectPolicy ?? DEFAULT_RECONNECT_POLICY;
-
+    this.reconnectPolicy = options?.reconnectPolicy ?? {};
+    this._reconnectPolicy = new DefaultReconnectPolicy(this.reconnectPolicy.maxRetries);
     this.signalClient = new SignalClient();
   }
 
@@ -140,6 +169,48 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     return this._remoteParticipants;
   }
 
+  /** Whether audio can be played back automatically (i.e. no autoplay restriction). */
+  get canPlaybackAudio(): boolean {
+    return this._canPlaybackAudio;
+  }
+
+  // --- Device Management ---
+
+  /**
+   * Enumerate available media input/output devices.
+   * @param kind - Filter by device kind. If omitted, all devices are returned.
+   */
+  static async getLocalDevices(kind?: MediaDeviceKind): Promise<MediaDeviceInfo[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    if (kind) {
+      return devices.filter((d) => d.kind === kind);
+    }
+    return devices;
+  }
+
+  /**
+   * Switch the active device for a given kind across all published tracks.
+   */
+  async switchActiveDevice(kind: MediaDeviceKind, deviceId: string): Promise<void> {
+    if (!this._localParticipant) return;
+    for (const [, pub] of this._localParticipant.trackPublications) {
+      const track = pub.track;
+      if (!track || !(track instanceof LocalTrack)) continue;
+
+      if (kind === 'audioinput' && track.kind === 'audio') {
+        await (track as any).setDeviceId?.(deviceId);
+      } else if (kind === 'videoinput' && track.kind === 'video') {
+        await (track as any).setDeviceId?.(deviceId);
+      } else if (kind === 'audiooutput') {
+        for (const el of (track as any).attachedElements ?? []) {
+          if (typeof el.setSinkId === 'function') {
+            await el.setSinkId(deviceId);
+          }
+        }
+      }
+    }
+  }
+
   // --- Connect ---
 
   async connect(url: string, token: string, options?: ConnectOptions): Promise<void> {
@@ -149,29 +220,26 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     this.url = url;
     this.token = token;
-    this._state = RoomState.Connecting;
+    this.setState(RoomState.Connecting);
 
     try {
-      // 1. Generate certificate and get DTLS fingerprints
-      // Re-instantiate TransportManager to ensure clean state for every connect()
       if (this.transportManager) {
         this.transportManager.close();
       }
       this.transportManager = new TransportManager(this.signalClient);
-      
-      // Re-instantiate RPCClient as it might have been closed
       this.rpcClient = new RPCClient();
 
       const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
       const hasDtlsFingerprints = fingerprints.length > 0;
 
-      // 2. Build JoinRequest
+      const autoSubscribe = options?.autoSubscribe ?? this._options.autoSubscribe ?? true;
+
       const joinRequest: JoinRequest = {
         displayName: options?.displayName ?? '',
         room: { name: options?.roomName ?? '' },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
-          autoSubscribe: this._options.autoSubscribe !== false,
+          autoSubscribe,
           adaptiveStream: !!this._options.adaptiveStream,
           dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
         },
@@ -181,17 +249,14 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         token,
       };
 
-      // 3. HTTP Join
       const { response: resp } = await this.signalClient.join(url, joinRequest);
-      const joinResponse = resp as JoinResponse; // Cast to JoinResponse as reconnect is false
+      const joinResponse = resp as JoinResponse;
       this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
 
-      // 4. Setup transports + signal DataChannels
       await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints);
       this.wireTransportEvents();
 
-      // 5. Bind RPC to DataChannels
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
         this.rpcClient.bind(
           this.transportManager.signalDataProducer,
@@ -199,17 +264,13 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         );
       }
 
-      // 6. Register handlers
       this.registerRPCHandlers();
       this.registerNotificationHandlers();
 
-      // Update local participant state to Connected
-      // We assume if transports are connected (which happened in transportManager.setup), user is active.
       if (this._localParticipant) {
         this._localParticipant.state = ParticipantState.Connected;
       }
 
-      // 7. Send ready RPC
       const readyReq: ReadyRequest = {
         rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
       };
@@ -220,7 +281,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         this._name = readyResp.room.name;
       }
 
-      // 8. Initialize remote participants
       if (readyResp?.otherParticipants) {
         for (const info of readyResp.otherParticipants) {
           const rp = RemoteParticipant.fromInfo(info);
@@ -230,23 +290,23 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         }
       }
 
-      // 9. Set state to connected
-      this._state = RoomState.Connected;
-
-      // 10. Start heartbeat and stats
+      this.setState(RoomState.Connected);
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this.startStatsCollector(joinResponse.statsInterval);
-      this._state = RoomState.Connected;
       this.reconnectAttempts = 0;
+      this._reconnectPolicy.reset();
+
+      this.setupDeviceChangeListener();
+      this.wireLocalParticipantEvents();
+
       this.emit(RoomEvent.Connected);
       log.info(`Connected to room ${this._name}`);
 
-      // Setup page leave handler
       if (this._options.disconnectOnPageLeave !== false) {
         this.setupPageLeaveHandler();
       }
     } catch (err) {
-      this._state = RoomState.Disconnected;
+      this.setState(RoomState.Disconnected);
       this.transportManager.close();
       throw err;
     }
@@ -270,8 +330,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   private async attemptReconnect(): Promise<void> {
     const maxRetries = this.reconnectPolicy.maxRetries ?? 10;
-    const maxDelay = this.reconnectPolicy.maxDelay ?? 30000;
-    const initialDelay = this.reconnectPolicy.initialDelay ?? 1000;
 
     if (this.reconnectAttempts >= maxRetries) {
       log.warn('Max reconnect attempts reached');
@@ -279,13 +337,21 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       return;
     }
 
-    this._state = RoomState.Reconnecting;
+    this.setState(RoomState.Reconnecting);
     this.emit(RoomEvent.Reconnecting);
     this.reconnectAttempts++;
 
-    const delay = Math.min(initialDelay * Math.pow(2, this.reconnectAttempts - 1), maxDelay);
-    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxRetries})`);
+    const delay = this._reconnectPolicy.nextRetryDelayInMs({
+      retryCount: this.reconnectAttempts,
+      elapsedMs: 0,
+    });
+    if (delay === null) {
+      log.warn('Reconnect policy says stop');
+      this.cleanup(DisconnectReason.StateMismatch);
+      return;
+    }
 
+    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxRetries})`);
     await new Promise((r) => setTimeout(r, delay));
 
     if (this._state !== RoomState.Reconnecting) return;
@@ -308,25 +374,21 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       const { response: resp } = await this.signalClient.join(this.url, joinRequest);
 
       if (isReconnectResponse(resp)) {
-        // --- ICE Restart Path ---
         await this.transportManager.restartIce(resp.iceParameters);
-        this._state = RoomState.Connected;
+        this.setState(RoomState.Connected);
         this.reconnectAttempts = 0;
-      this.emit(RoomEvent.Reconnected);
-      log.info('ICE restart completed');
+        this._reconnectPolicy.reset();
+        this.emit(RoomEvent.Reconnected);
+        log.info('ICE restart completed');
         return;
       }
 
-      // --- Full Reconnect Path ---
       const jr = resp as JoinResponse;
-
-      // Close old transports but keep tracks alive
       this.stopHeartbeat();
       this.stopStatsCollector();
       this.rpcClient.close();
       this.transportManager.close();
 
-      // Re-create transport manager and RPC client
       this.rpcClient = new RPCClient();
       this.transportManager = new TransportManager(this.signalClient);
 
@@ -364,8 +426,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
       this.startStatsCollector(jr.statsInterval);
 
-      this._state = RoomState.Connected;
+      this.setState(RoomState.Connected);
       this.reconnectAttempts = 0;
+      this._reconnectPolicy.reset();
       this.emit(RoomEvent.Reconnected);
       log.info('Reconnected successfully');
     } catch (err) {
@@ -381,22 +444,18 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     for (const pub of publications) {
       if (pub.track) {
         const localTrack = pub.track as LocalTrack;
-        
-        // The old transport is closed, so the old producer is invalid.
-        // We must clear it to avoid "InvalidStateError" when replacing track or publishing.
         localTrack.producer = undefined;
 
         if (localTrack.mediaStreamTrack?.readyState === 'ended') {
           log.info(`Track ${pub.trackSid} ended, attempting to restart and republish`);
           try {
-             // Restart the track (acquire new MediaStreamTrack)
-             await localTrack.restart();
+            await localTrack.restart();
           } catch (err) {
-             log.warn(`Failed to restart track ${pub.trackSid}`, err);
-             continue;
+            log.warn(`Failed to restart track ${pub.trackSid}`, err);
+            continue;
           }
         }
-        
+
         try {
           await this._localParticipant.publishTrack(localTrack, {
             name: pub.trackName,
@@ -434,10 +493,18 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     };
   }
 
+  // --- State management ---
+
+  private setState(state: RoomState): void {
+    if (this._state === state) return;
+    this._state = state;
+    this.emit(RoomEvent.ConnectionStateChanged, state);
+  }
+
   // --- Heartbeat ---
 
   private startHeartbeat(intervalSec: number, timeoutSec: number): void {
-    this.stopHeartbeat(); // Ensure any existing heartbeat is stopped first
+    this.stopHeartbeat();
     this.pingIntervalSec = intervalSec || 5;
     this.pingTimeoutSec = timeoutSec || 15;
 
@@ -460,7 +527,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private sendPing(): void {
     if (this._state !== RoomState.Connected) return;
 
-    // Skip ping if data was sent recently (stats reports act as keepalive)
     const idleThreshold = this.pingIntervalSec * 1000;
     if (this.rpcClient.lastSentAt > 0 && Date.now() - this.rpcClient.lastSentAt < idleThreshold) {
       return;
@@ -522,6 +588,62 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     const resp = await this.rpcClient.request<{ token: string }>('token.refresh', { token: newToken });
     this.token = resp.token;
     return resp.token;
+  }
+
+  // --- Audio Playback ---
+
+  /**
+   * Attempt to start audio playback on all remote audio tracks.
+   * Should be called from a user interaction handler when
+   * `canPlaybackAudio` is `false`.
+   */
+  async startAudio(): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (const [, rp] of this._remoteParticipants) {
+      for (const [, pub] of rp.trackPublications) {
+        if (pub.track && pub.kind === 'audio') {
+          const el = pub.track.attach();
+          promises.push(
+            el.play().then(() => {
+              if (!this._canPlaybackAudio) {
+                this._canPlaybackAudio = true;
+                this.emit(RoomEvent.AudioPlaybackStatusChanged, true);
+              }
+            }).catch(() => {}),
+          );
+        }
+      }
+    }
+    await Promise.allSettled(promises);
+  }
+
+  // --- P2P RPC ---
+
+  /**
+   * Register an RPC method handler. When a remote participant calls
+   * `performRpc` with the given method name, the handler is invoked.
+   *
+   * @param method - Method name to handle.
+   * @param handler - Async function that receives invocation data and returns
+   *   a string payload.
+   */
+  registerRpcMethod(method: string, handler: (data: RpcInvocationData) => Promise<string>): void {
+    this._localParticipant.rpcHandlers.set(method, handler);
+  }
+
+  /**
+   * Remove a previously registered RPC method handler.
+   */
+  unregisterRpcMethod(method: string): void {
+    this._localParticipant.rpcHandlers.delete(method);
+  }
+
+  // --- Prepare Connection (pre-warm) ---
+
+  async prepareConnection(url: string, token: string): Promise<void> {
+    log.info('Pre-warming connection (placeholder)');
+    this.url = url;
+    this.token = token;
   }
 
   // --- Internal ---
@@ -598,15 +720,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     });
 
     this.rpcClient.onNotification('disconnect', (body: DisconnectNotification) => {
-      // If we are reconnecting, we might receive a disconnect notification from the old session
-      // or the server might be shutting down.
-      // If it's a server shutdown or similar, we should probably try to reconnect?
-      // But DisconnectReason.ServerShutdown usually means "bye".
-      
-      // However, the user issue is about server restart.
-      // If server restarts, it might send a Disconnect notification with ServerShutdown or similar?
-      // Or maybe the socket just closes.
-      
       this.handleDisconnect(body.reason);
     });
 
@@ -616,6 +729,34 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     this.rpcClient.onNotification('dataSubscription.closed', (body: DataSubscriptionClosedNotification) => {
       this.handleDataSubscriptionClosed(body);
+    });
+
+    this.rpcClient.onNotification('chat.message', (body: any) => {
+      this.handleChatMessage(body);
+    });
+
+    this.rpcClient.onNotification('dataStream.open', (body: any) => {
+      this.streamAssembler.handleOpen(body, body.senderIdentity ?? '');
+    });
+
+    this.rpcClient.onNotification('dataStream.chunk', (body: any) => {
+      this.streamAssembler.handleChunk(body, body.senderIdentity ?? '');
+    });
+
+    this.rpcClient.onNotification('rpc.invoke', (body: any) => {
+      this._localParticipant.handleRpcInvocation(body);
+    });
+
+    this.rpcClient.onNotification('rpc.response', (body: any) => {
+      this._localParticipant.handleRpcResponse(body);
+    });
+
+    this.streamAssembler.onTextStream((info, reader, participantIdentity) => {
+      this.emit(RoomEvent.TextStreamReceived, reader, info, participantIdentity);
+    });
+
+    this.streamAssembler.onByteStream((info, reader, participantIdentity) => {
+      this.emit(RoomEvent.ByteStreamReceived, reader, info, participantIdentity);
     });
   }
 
@@ -644,8 +785,17 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.participant.sid);
     if (!rp) return;
 
+    const prevMetadata = rp.metadata;
+    const prevName = rp.name;
     rp.updateFromInfo(body.participant);
     this.emit(RoomEvent.ParticipantUpdated, rp);
+
+    if (prevMetadata !== rp.metadata) {
+      this.emit(RoomEvent.ParticipantMetadataChanged, prevMetadata, rp);
+    }
+    if (prevName !== rp.name) {
+      this.emit(RoomEvent.ParticipantNameChanged, rp.name!, rp);
+    }
   }
 
   private handleTrackPublished(body: TrackPublishedNotification): void {
@@ -719,6 +869,21 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this.emit(RoomEvent.ActiveSpeakersChanged, body.speakers);
   }
 
+  private handleChatMessage(body: any): void {
+    const msg: ChatMessage = {
+      id: body.id,
+      message: body.message,
+      timestamp: body.timestamp,
+      editTimestamp: body.editTimestamp,
+      attachedFiles: body.attachedFiles,
+    };
+    const participant = body.participantSid
+      ? this._remoteParticipants.get(body.participantSid)
+      : undefined;
+    participant?.emit(ParticipantEvent.ChatMessage, msg);
+    this.emit(RoomEvent.ChatMessage, msg, participant);
+  }
+
   private handleRoomUpdated(body: RoomUpdatedNotification): void {
     this._roomInfo = body.room;
     this._name = body.room.name;
@@ -734,7 +899,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       reason === DisconnectReason.ParticipantRemoved ||
       reason === DisconnectReason.RoomDeleted;
 
-    // If we are already reconnecting, ignore subsequent disconnects unless it's a hard failure
     if (this._state === RoomState.Reconnecting) {
       if (isHardFailure) {
         this.cleanup(reason);
@@ -753,7 +917,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.publisherSid);
     if (!rp) {
       log.warn(`Subscription create for unknown publisher ${body.publisherSid}`);
-      // Create a placeholder participant
       const { RemoteParticipant: RP } = await import('./participant/RemoteParticipant');
       const newRp = new RP(body.publisherSid, body.publisherSid);
       newRp.init(this.transportManager, this.rpcClient);
@@ -807,11 +970,44 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     rp.on(ParticipantEvent.DataReceived, (data) => {
       this.emit(RoomEvent.DataReceived, data, rp);
     });
+    rp.on(ParticipantEvent.MetadataChanged, (metadata, participant) => {
+      this.emit(RoomEvent.ParticipantMetadataChanged, metadata, participant);
+    });
+    rp.on(ParticipantEvent.NameChanged, (name, participant) => {
+      this.emit(RoomEvent.ParticipantNameChanged, name!, participant);
+    });
+    rp.on(ParticipantEvent.AttributesChanged, (changed, participant) => {
+      this.emit(RoomEvent.ParticipantAttributesChanged, changed, participant);
+    });
+  }
+
+  private wireLocalParticipantEvents(): void {
+    if (!this._localParticipant) return;
+    this._localParticipant.on(ParticipantEvent.LocalTrackPublished, (pub) => {
+      this.emit(RoomEvent.LocalTrackPublished, pub, this._localParticipant);
+    });
+    this._localParticipant.on(ParticipantEvent.LocalTrackUnpublished, (pub) => {
+      this.emit(RoomEvent.LocalTrackUnpublished, pub, this._localParticipant);
+    });
+    this._localParticipant.on(ParticipantEvent.TrackMuted, (pub) => {
+      this.emit(RoomEvent.TrackMuted, pub, this._localParticipant);
+    });
+    this._localParticipant.on(ParticipantEvent.TrackUnmuted, (pub) => {
+      this.emit(RoomEvent.TrackUnmuted, pub, this._localParticipant);
+    });
+  }
+
+  private setupDeviceChangeListener(): void {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
+    this.deviceChangeHandler = () => {
+      this.emit(RoomEvent.MediaDevicesChanged);
+    };
+    navigator.mediaDevices.addEventListener('devicechange', this.deviceChangeHandler);
   }
 
   private cleanup(reason: DisconnectReason): void {
     if (this._state === RoomState.Disconnected) return;
-    this._state = RoomState.Disconnected;
+    this.setState(RoomState.Disconnected);
 
     this.stopHeartbeat();
     this.stopStatsCollector();
@@ -827,6 +1023,11 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     if (this.pageLeaveHandler) {
       window.removeEventListener('beforeunload', this.pageLeaveHandler);
       this.pageLeaveHandler = undefined;
+    }
+
+    if (this.deviceChangeHandler && typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      navigator.mediaDevices.removeEventListener('devicechange', this.deviceChangeHandler);
+      this.deviceChangeHandler = undefined;
     }
 
     this.emit(RoomEvent.Disconnected, reason);
@@ -847,26 +1048,5 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.disconnect();
     };
     window.addEventListener('beforeunload', this.pageLeaveHandler);
-  }
-
-  // --- Audio Playback ---
-
-  async startAudio(): Promise<void> {
-    for (const [, rp] of this._remoteParticipants) {
-      for (const [, pub] of rp.trackPublications) {
-        if (pub.track && pub.kind === 'audio') {
-          const el = pub.track.attach();
-          el.play().catch(() => {});
-        }
-      }
-    }
-  }
-
-  // --- Prepare Connection (pre-warm) ---
-
-  async prepareConnection(url: string, token: string): Promise<void> {
-    log.info('Pre-warming connection (placeholder)');
-    this.url = url;
-    this.token = token;
   }
 }

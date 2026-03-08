@@ -18,6 +18,9 @@ import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, Vide
 import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
+import type { ChatMessage, SendTextOptions, StreamTextOptions, StreamBytesOptions, SendFileOptions, PerformRpcParams, RpcInvocationData } from '../types';
+import { DataStreamManager, TextStreamWriter, ByteStreamWriter } from '../data-stream/DataStreamManager';
+import { RpcError, byteLength, MAX_RPC_PAYLOAD_BYTES } from '../rpc';
 
 const log = getLogger('LocalParticipant');
 
@@ -26,12 +29,26 @@ export class LocalParticipant extends Participant {
   private transportManager!: TransportManager;
   private producers = new Map<string, mediasoupTypes.Producer>();
   private dataProducers = new Map<string, mediasoupTypes.DataProducer>();
-  private trackSidMap = new Map<string, string>(); // trackSid -> localTrack id
+  private trackSidMap = new Map<string, string>();
+  private dataStreamManager?: DataStreamManager;
+
+  private _lastCameraError?: Error;
+  private _lastMicrophoneError?: Error;
+
+  /** @internal RPC handlers registered by the user for P2P RPC. */
+  rpcHandlers = new Map<string, (data: RpcInvocationData) => Promise<string>>();
+  /** @internal Pending RPC responses waiting for a reply. */
+  pendingRpcResponses = new Map<string, {
+    resolve: (payload: string) => void;
+    reject: (error: RpcError) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
 
   /** @internal */
   init(rpc: RPCClient, transportManager: TransportManager): void {
     this.rpc = rpc;
     this.transportManager = transportManager;
+    this.dataStreamManager = new DataStreamManager(rpc);
   }
 
   /** @internal */
@@ -44,14 +61,29 @@ export class LocalParticipant extends Participant {
     return this.dataProducers;
   }
 
+  /** Last error encountered while creating a camera track. */
+  get lastCameraError(): Error | undefined {
+    return this._lastCameraError;
+  }
+
+  /** Last error encountered while creating a microphone track. */
+  get lastMicrophoneError(): Error | undefined {
+    return this._lastMicrophoneError;
+  }
+
   async setCameraEnabled(
     enabled: boolean,
     captureOptions?: VideoCaptureOptions,
     publishOptions?: TrackPublishOptions,
   ): Promise<TrackPublication | undefined> {
     if (enabled) {
-      const track = await createLocalVideoTrack(captureOptions);
-      return this.publishTrack(track, { ...publishOptions, source: TrackSource.Camera });
+      try {
+        const track = await createLocalVideoTrack(captureOptions);
+        return await this.publishTrack(track, { ...publishOptions, source: TrackSource.Camera });
+      } catch (e) {
+        this._lastCameraError = e instanceof Error ? e : new Error(String(e));
+        throw e;
+      }
     } else {
       const pub = this.getTrackPublication(TrackSource.Camera);
       if (pub?.track) {
@@ -67,8 +99,13 @@ export class LocalParticipant extends Participant {
     publishOptions?: TrackPublishOptions,
   ): Promise<TrackPublication | undefined> {
     if (enabled) {
-      const track = await createLocalAudioTrack(captureOptions);
-      return this.publishTrack(track, { ...publishOptions, source: TrackSource.Microphone });
+      try {
+        const track = await createLocalAudioTrack(captureOptions);
+        return await this.publishTrack(track, { ...publishOptions, source: TrackSource.Microphone });
+      } catch (e) {
+        this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
+        throw e;
+      }
     } else {
       const pub = this.getTrackPublication(TrackSource.Microphone);
       if (pub?.track) {
@@ -100,6 +137,44 @@ export class LocalParticipant extends Participant {
         await this.unpublishTrack(audioPub.track as LocalTrack);
       }
       return pub;
+    }
+  }
+
+  /**
+   * Enable both camera and microphone simultaneously.
+   * More efficient than calling `setCameraEnabled` and `setMicrophoneEnabled`
+   * separately because it batches the device request.
+   */
+  async enableCameraAndMicrophone(
+    captureOptions?: { audio?: AudioCaptureOptions; video?: VideoCaptureOptions },
+    publishOptions?: TrackPublishOptions,
+  ): Promise<void> {
+    const [audioTrack, videoTrack] = await Promise.all([
+      createLocalAudioTrack(captureOptions?.audio).catch((e) => {
+        this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
+        log.warn('Failed to create audio track', e);
+        return undefined;
+      }),
+      createLocalVideoTrack(captureOptions?.video).catch((e) => {
+        this._lastCameraError = e instanceof Error ? e : new Error(String(e));
+        log.warn('Failed to create video track', e);
+        return undefined;
+      }),
+    ]);
+
+    const results = await Promise.allSettled([
+      audioTrack
+        ? this.publishTrack(audioTrack, { ...publishOptions, source: TrackSource.Microphone })
+        : Promise.resolve(),
+      videoTrack
+        ? this.publishTrack(videoTrack, { ...publishOptions, source: TrackSource.Camera })
+        : Promise.resolve(),
+    ]);
+
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        log.warn('Failed to publish track', r.reason);
+      }
     }
   }
 
@@ -245,6 +320,7 @@ export class LocalParticipant extends Participant {
     });
 
     this.emit(ParticipantEvent.TrackPublished, publication);
+    this.emit(ParticipantEvent.LocalTrackPublished, publication);
     log.info(`Published track ${trackSid} (${localTrack.kind}/${localTrack.source})`);
 
     return publication;
@@ -284,6 +360,7 @@ export class LocalParticipant extends Participant {
         publication.track.stop();
       }
       this.emit(ParticipantEvent.TrackUnpublished, publication);
+      this.emit(ParticipantEvent.LocalTrackUnpublished, publication);
     }
 
     log.info(`Unpublished track ${trackSid}`);
@@ -332,6 +409,160 @@ export class LocalParticipant extends Participant {
   async updateAttributes(attributes: Record<string, string>): Promise<void> {
     await this.rpc.request('participant.update', { attributes });
     this.attributes = { ...this.attributes, ...attributes };
+  }
+
+  // --- Chat Messages ---
+
+  /**
+   * Send a chat message to all participants in the room.
+   */
+  async sendChatMessage(text: string): Promise<ChatMessage> {
+    const msg: ChatMessage = {
+      id: crypto.randomUUID(),
+      message: text,
+      timestamp: Date.now(),
+    };
+    this.rpc.notify('chat.message', msg);
+    this.emit(ParticipantEvent.ChatMessage, msg);
+    return msg;
+  }
+
+  /**
+   * Edit a previously sent chat message.
+   */
+  async editChatMessage(editText: string, originalMessage: ChatMessage): Promise<ChatMessage> {
+    const msg: ChatMessage = {
+      ...originalMessage,
+      message: editText,
+      editTimestamp: Date.now(),
+    };
+    this.rpc.notify('chat.message', msg);
+    this.emit(ParticipantEvent.ChatMessage, msg);
+    return msg;
+  }
+
+  // --- Data Streams ---
+
+  /**
+   * Send a complete text message to participants via data stream.
+   */
+  async sendText(text: string, options?: SendTextOptions): Promise<{ id: string }> {
+    if (!this.dataStreamManager) throw new Error('Not connected');
+    return this.dataStreamManager.sendText(text, options);
+  }
+
+  /**
+   * Open an incremental text stream to participants.
+   * Returns a writer that can be used to send text chunks.
+   */
+  streamText(options?: StreamTextOptions): TextStreamWriter {
+    if (!this.dataStreamManager) throw new Error('Not connected');
+    return this.dataStreamManager.streamText(options);
+  }
+
+  /**
+   * Send a file to participants via data stream.
+   */
+  async sendFile(file: File, options?: SendFileOptions): Promise<{ id: string }> {
+    if (!this.dataStreamManager) throw new Error('Not connected');
+    return this.dataStreamManager.sendFile(file, options);
+  }
+
+  /**
+   * Open an incremental byte stream to participants.
+   * Returns a writer that can be used to send byte chunks.
+   */
+  streamBytes(options?: StreamBytesOptions): ByteStreamWriter {
+    if (!this.dataStreamManager) throw new Error('Not connected');
+    return this.dataStreamManager.streamBytes(options);
+  }
+
+  // --- P2P RPC ---
+
+  /**
+   * Perform an RPC call to a specific remote participant.
+   * The remote participant must have registered a handler for the method
+   * via `room.registerRpcMethod`.
+   *
+   * @returns The response payload string.
+   */
+  async performRpc(params: PerformRpcParams): Promise<string> {
+    const { destinationIdentity, method, payload, responseTimeout = 15000 } = params;
+
+    if (byteLength(payload) > MAX_RPC_PAYLOAD_BYTES) {
+      throw RpcError.builtIn('REQUEST_PAYLOAD_TOO_LARGE');
+    }
+
+    const requestId = crypto.randomUUID();
+
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRpcResponses.delete(requestId);
+        reject(RpcError.builtIn('RESPONSE_TIMEOUT'));
+      }, responseTimeout);
+
+      this.pendingRpcResponses.set(requestId, { resolve, reject, timer });
+
+      this.rpc.notify('rpc.request', {
+        requestId,
+        destinationIdentity,
+        method,
+        payload,
+        responseTimeout,
+        callerIdentity: this.identity,
+      });
+    });
+  }
+
+  /** @internal Handle an incoming RPC response relayed by the server. */
+  handleRpcResponse(body: any): void {
+    const pending = this.pendingRpcResponses.get(body.requestId);
+    if (!pending) return;
+
+    this.pendingRpcResponses.delete(body.requestId);
+    clearTimeout(pending.timer);
+
+    if (body.error) {
+      pending.reject(new RpcError(body.error.code ?? 1500, body.error.message ?? 'Application error', body.error.data));
+    } else {
+      pending.resolve(body.payload ?? '');
+    }
+  }
+
+  /** @internal Handle an incoming RPC invocation from a remote participant. */
+  async handleRpcInvocation(body: any): Promise<void> {
+    const handler = this.rpcHandlers.get(body.method);
+    if (!handler) {
+      this.rpc.notify('rpc.response', {
+        requestId: body.requestId,
+        callerIdentity: body.callerIdentity,
+        error: { code: RpcError.ErrorCode.UNSUPPORTED_METHOD, message: 'Method not supported' },
+      });
+      return;
+    }
+
+    try {
+      const result = await handler({
+        requestId: body.requestId,
+        callerIdentity: body.callerIdentity,
+        payload: body.payload ?? '',
+        responseTimeout: body.responseTimeout ?? 15000,
+      });
+      this.rpc.notify('rpc.response', {
+        requestId: body.requestId,
+        callerIdentity: body.callerIdentity,
+        payload: result,
+      });
+    } catch (err) {
+      const rpcErr = err instanceof RpcError
+        ? err
+        : new RpcError(RpcError.ErrorCode.APPLICATION_ERROR, err instanceof Error ? err.message : String(err));
+      this.rpc.notify('rpc.response', {
+        requestId: body.requestId,
+        callerIdentity: body.callerIdentity,
+        error: { code: rpcErr.code, message: rpcErr.message, data: rpcErr.data },
+      });
+    }
   }
 
   private buildCodecOptions(options?: TrackPublishOptions): PublishCodecOptions | undefined {

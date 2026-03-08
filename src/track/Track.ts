@@ -8,7 +8,20 @@ export interface TrackEvents {
   [TrackEvent.Ended]: (track: Track) => void;
   [TrackEvent.ElementAttached]: (element: HTMLMediaElement) => void;
   [TrackEvent.ElementDetached]: (element: HTMLMediaElement) => void;
+  [TrackEvent.AudioPlaybackStarted]: () => void;
+  [TrackEvent.AudioPlaybackFailed]: (error?: Error) => void;
+  [TrackEvent.VideoPlaybackStarted]: () => void;
+  [TrackEvent.VideoPlaybackFailed]: (error?: Error) => void;
+  [TrackEvent.UpstreamPaused]: (track: Track) => void;
+  [TrackEvent.UpstreamResumed]: (track: Track) => void;
+  [TrackEvent.VisibilityChanged]: (visible: boolean, track: Track) => void;
+  [TrackEvent.VideoDimensionsChanged]: (dimensions: Track.Dimensions, track: Track) => void;
+  [TrackEvent.AudioSilenceDetected]: () => void;
 }
+
+// Keep old audio elements for re-use. On iOS Safari, tracks which audio
+// elements have been "blessed" by the user are remembered by the browser.
+const recycledElements: HTMLAudioElement[] = [];
 
 export abstract class Track extends TypedEventEmitter<TrackEvents> {
   kind: TrackKind;
@@ -46,9 +59,19 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
 
   attach(element?: HTMLMediaElement): HTMLMediaElement {
     if (!element) {
-      element = document.createElement(
-        this.kind === TrackKind.Audio ? 'audio' : 'video',
-      );
+      if (this.kind === TrackKind.Audio) {
+        // Try to reuse a recycled audio element (iOS Safari workaround)
+        const recycled = recycledElements.find((e) => e.parentElement === null);
+        if (recycled) {
+          recycledElements.splice(recycledElements.indexOf(recycled), 1);
+          element = recycled;
+        }
+      }
+      if (!element) {
+        element = document.createElement(
+          this.kind === TrackKind.Audio ? 'audio' : 'video',
+        );
+      }
       element.autoplay = true;
       if (this.kind === TrackKind.Video) {
         (element as HTMLVideoElement).playsInline = true;
@@ -56,10 +79,29 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     }
 
     const stream = new MediaStream([this.mediaStreamTrack]);
+    // Avoid setting muted attribute for elements with audio
+    element.muted = stream.getAudioTracks().length === 0;
     element.srcObject = stream;
 
     this.attachedElements.add(element);
     this.emit(TrackEvent.ElementAttached, element);
+
+    const hasAudio = stream.getAudioTracks().length > 0;
+    element.play()
+      .then(() => {
+        this.emit(hasAudio ? TrackEvent.AudioPlaybackStarted : TrackEvent.VideoPlaybackStarted);
+      })
+      .catch((e: Error) => {
+        if (e.name === 'NotAllowedError') {
+          this.emit(hasAudio ? TrackEvent.AudioPlaybackFailed : TrackEvent.VideoPlaybackFailed, e);
+        }
+        // If audio playback blocked, try muted video playback
+        if (hasAudio && element && stream.getVideoTracks().length > 0 && e.name === 'NotAllowedError') {
+          element.muted = true;
+          element.play().catch(() => {});
+        }
+      });
+
     return element;
   }
 
@@ -78,11 +120,29 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   private detachElement(element: HTMLMediaElement): void {
     element.srcObject = null;
     this.attachedElements.delete(element);
+    this.recycleElement(element);
     this.emit(TrackEvent.ElementDetached, element);
+  }
+
+  private recycleElement(element: HTMLMediaElement): void {
+    if (element instanceof HTMLAudioElement) {
+      element.pause();
+      // Only keep one recycled element
+      if (recycledElements.length === 0 || recycledElements.every((e) => e.parentElement !== null)) {
+        recycledElements.push(element);
+      }
+    }
   }
 
   stop(): void {
     this.mediaStreamTrack?.stop();
     this.detach();
+  }
+}
+
+export namespace Track {
+  export interface Dimensions {
+    width: number;
+    height: number;
   }
 }

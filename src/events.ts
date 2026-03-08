@@ -9,9 +9,7 @@
  * ```
  */
 export enum RoomEvent {
-  /**
-   * Successfully connected to the room.
-   */
+  /** Successfully connected to the room. */
   Connected = 'connected',
 
   /**
@@ -22,16 +20,39 @@ export enum RoomEvent {
    */
   Disconnected = 'disconnected',
 
-  /**
-   * The SDK is attempting to reconnect to the room after a connection
-   * interruption.
-   */
+  /** The SDK is attempting to reconnect to the room after a connection interruption. */
   Reconnecting = 'reconnecting',
 
-  /**
-   * Successfully reconnected to the room after a temporary disconnection.
-   */
+  /** Successfully reconnected to the room after a temporary disconnection. */
   Reconnected = 'reconnected',
+
+  /**
+   * Whenever the connection state of the room changes.
+   *
+   * args: `(state: RoomState)`
+   */
+  ConnectionStateChanged = 'connectionStateChanged',
+
+  /**
+   * When the signal connection to the server has been interrupted. This is
+   * not always noticeable to users. It will resolve with
+   * {@link RoomEvent.Reconnected} once re-established. If media also fails,
+   * an additional {@link RoomEvent.Reconnecting} will be emitted.
+   */
+  SignalReconnecting = 'signalReconnecting',
+
+  /**
+   * When input or output devices on the machine have changed.
+   */
+  MediaDevicesChanged = 'mediaDevicesChanged',
+
+  /**
+   * When an error occurs while attempting to create a track from a device.
+   * Use {@link MediaDeviceFailure.getFailure} to get the specific reason.
+   *
+   * args: `(error: Error)`
+   */
+  MediaDevicesError = 'mediaDevicesError',
 
   /**
    * A remote participant has joined the room.
@@ -53,6 +74,27 @@ export enum RoomEvent {
    * args: `(participant: RemoteParticipant)`
    */
   ParticipantUpdated = 'participantUpdated',
+
+  /**
+   * Participant metadata has changed.
+   *
+   * args: `(prevMetadata: string | undefined, participant: Participant)`
+   */
+  ParticipantMetadataChanged = 'participantMetadataChanged',
+
+  /**
+   * Participant's display name has changed.
+   *
+   * args: `(name: string, participant: Participant)`
+   */
+  ParticipantNameChanged = 'participantNameChanged',
+
+  /**
+   * Participant attributes have changed.
+   *
+   * args: `(changedAttributes: Record<string, string>, participant: Participant)`
+   */
+  ParticipantAttributesChanged = 'participantAttributesChanged',
 
   /**
    * A remote participant has published a new track.
@@ -77,6 +119,13 @@ export enum RoomEvent {
   TrackSubscribed = 'trackSubscribed',
 
   /**
+   * Could not subscribe to a track.
+   *
+   * args: `(trackSid: string, participant: RemoteParticipant)`
+   */
+  TrackSubscriptionFailed = 'trackSubscriptionFailed',
+
+  /**
    * Unsubscribed from a remote track. The track should be detached from any
    * media elements at this point.
    *
@@ -85,31 +134,50 @@ export enum RoomEvent {
   TrackUnsubscribed = 'trackUnsubscribed',
 
   /**
-   * A remote track has been muted.
+   * A track has been muted. Fires on both remote and local participants.
    *
-   * args: `(publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(publication: TrackPublication, participant: Participant)`
    */
   TrackMuted = 'trackMuted',
 
   /**
-   * A remote track has been unmuted.
+   * A track has been unmuted. Fires on both remote and local participants.
    *
-   * args: `(publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(publication: TrackPublication, participant: Participant)`
    */
   TrackUnmuted = 'trackUnmuted',
 
   /**
-   * The list of active speakers in the room has changed.
+   * A local track was published successfully.
+   *
+   * args: `(publication: LocalTrackPublication, participant: LocalParticipant)`
+   */
+  LocalTrackPublished = 'localTrackPublished',
+
+  /**
+   * A local track was unpublished. When a user stops sharing their screen
+   * by pressing "End" on the browser UI, this event will also fire.
+   *
+   * args: `(publication: LocalTrackPublication, participant: LocalParticipant)`
+   */
+  LocalTrackUnpublished = 'localTrackUnpublished',
+
+  /**
+   * When a local audio track is published, the SDK checks whether there is
+   * complete silence on that track and emits this event. This allows
+   * applications to show UI informing users about hardware issues.
+   */
+  LocalAudioSilenceDetected = 'localAudioSilenceDetected',
+
+  /**
+   * Active speakers changed. List of speakers ordered by audio level.
+   * Includes the local participant.
    *
    * args: `(speakers: ActiveSpeaker[])`
    */
   ActiveSpeakersChanged = 'activeSpeakersChanged',
 
-  /**
-   * Room-level metadata has been updated by the server.
-   *
-   * args: `(room: RoomInfo)`
-   */
+  /** Room-level metadata has been updated by the server. */
   RoomUpdated = 'roomUpdated',
 
   /**
@@ -125,6 +193,40 @@ export enum RoomEvent {
    * args: `(quality: ConnectionQuality, participant: Participant)`
    */
   ConnectionQualityChanged = 'connectionQualityChanged',
+
+  /**
+   * Audio playback status has changed. When `canPlaybackAudio` becomes
+   * `false`, the application should display UI to prompt user interaction,
+   * then call {@link Room.startAudio}.
+   */
+  AudioPlaybackStatusChanged = 'audioPlaybackStatusChanged',
+
+  /**
+   * A chat message has been received or sent.
+   *
+   * args: `(message: ChatMessage, participant?: Participant)`
+   */
+  ChatMessage = 'chatMessage',
+
+  /**
+   * An incoming text stream has been received.
+   *
+   * args: `(reader: ReadableStream<string>, info: TextStreamInfo, participantIdentity: string)`
+   */
+  TextStreamReceived = 'textStreamReceived',
+
+  /**
+   * An incoming byte stream has been received.
+   *
+   * args: `(reader: ReadableStream<Uint8Array>, info: ByteStreamInfo, participantIdentity: string)`
+   */
+  ByteStreamReceived = 'byteStreamReceived',
+
+  /**
+   * An RPC method has been invoked by a remote participant.
+   * Use `room.registerRpcMethod` to handle RPC calls.
+   */
+  RpcMethodInvoked = 'rpcMethodInvoked',
 }
 
 /**
@@ -152,18 +254,10 @@ export enum ParticipantEvent {
    */
   TrackUnpublished = 'trackUnpublished',
 
-  /**
-   * One of the participant's tracks has been muted.
-   *
-   * args: `(publication: TrackPublication)`
-   */
+  /** One of the participant's tracks has been muted. */
   TrackMuted = 'trackMuted',
 
-  /**
-   * One of the participant's tracks has been unmuted.
-   *
-   * args: `(publication: TrackPublication)`
-   */
+  /** One of the participant's tracks has been unmuted. */
   TrackUnmuted = 'trackUnmuted',
 
   /**
@@ -181,39 +275,47 @@ export enum ParticipantEvent {
   TrackUnsubscribed = 'trackUnsubscribed',
 
   /**
-   * The participant's metadata has changed.
+   * A local track was published by this participant.
    *
-   * args: `(metadata: string | undefined, participant: Participant)`
+   * args: `(publication: LocalTrackPublication)`
    */
-  MetadataChanged = 'metadataChanged',
+  LocalTrackPublished = 'localTrackPublished',
 
   /**
-   * The participant's display name has changed.
+   * A local track was unpublished by this participant.
    *
-   * args: `(name: string | undefined, participant: Participant)`
+   * args: `(publication: LocalTrackPublication)`
    */
+  LocalTrackUnpublished = 'localTrackUnpublished',
+
+  /** The participant's metadata has changed. */
+  MetadataChanged = 'metadataChanged',
+
+  /** The participant's display name has changed. */
   NameChanged = 'nameChanged',
 
   /**
-   * The participant's speaking status has changed.
+   * The participant's attributes have changed.
    *
-   * args: `(speaking: boolean, participant: Participant)`
+   * args: `(changedAttributes: Record<string, string>, participant: Participant)`
    */
+  AttributesChanged = 'attributesChanged',
+
+  /** The participant's speaking status has changed. */
   IsSpeakingChanged = 'isSpeakingChanged',
 
-  /**
-   * The connection quality of this participant has changed.
-   *
-   * args: `(quality: ConnectionQuality, participant: Participant)`
-   */
+  /** The connection quality of this participant has changed. */
   ConnectionQualityChanged = 'connectionQualityChanged',
 
-  /**
-   * Data received from this participant.
-   *
-   * args: `(data: ArrayBuffer)`
-   */
+  /** Data received from this participant. */
   DataReceived = 'dataReceived',
+
+  /**
+   * A chat message from this participant.
+   *
+   * args: `(message: ChatMessage)`
+   */
+  ChatMessage = 'chatMessage',
 }
 
 /**
@@ -230,61 +332,79 @@ export enum TrackEvent {
   /**
    * The track has been muted. For local tracks this happens when
    * `setMuted(true)` is called or the producer is paused.
-   *
-   * args: `(track: Track)`
    */
   Muted = 'muted',
 
-  /**
-   * The track has been unmuted.
-   *
-   * args: `(track: Track)`
-   */
+  /** The track has been unmuted. */
   Unmuted = 'unmuted',
 
   /**
    * The track has permanently ended. For local tracks, this typically means
    * the underlying `MediaStreamTrack` has been stopped.
-   *
-   * args: `(track: Track)`
    */
   Ended = 'ended',
 
-  /**
-   * The local track has been restarted with new constraints (e.g. device
-   * change).
-   *
-   * args: `(track: LocalTrack)`
-   */
+  /** The local track has been restarted with new constraints (e.g. device change). */
   Restarted = 'restarted',
 
-  /**
-   * Subscribed to a remote track.
-   *
-   * args: `(track: RemoteTrack)`
-   */
+  /** Subscribed to a remote track. */
   Subscribed = 'subscribed',
 
-  /**
-   * Unsubscribed from a remote track.
-   *
-   * args: `(track: RemoteTrack)`
-   */
+  /** Unsubscribed from a remote track. */
   Unsubscribed = 'unsubscribed',
 
-  /**
-   * An `HTMLMediaElement` has been attached to this track via
-   * {@link Track.attach}.
-   *
-   * args: `(element: HTMLMediaElement, track: Track)`
-   */
+  /** An `HTMLMediaElement` has been attached to this track. */
   ElementAttached = 'elementAttached',
 
-  /**
-   * An `HTMLMediaElement` has been detached from this track via
-   * {@link Track.detach}.
-   *
-   * args: `(element: HTMLMediaElement, track: Track)`
-   */
+  /** An `HTMLMediaElement` has been detached from this track. */
   ElementDetached = 'elementDetached',
+
+  /** Audio playback started successfully after calling `attach`. */
+  AudioPlaybackStarted = 'audioPlaybackStarted',
+
+  /**
+   * Audio playback failed, typically due to browser autoplay policy.
+   *
+   * args: `(error?: Error)`
+   */
+  AudioPlaybackFailed = 'audioPlaybackFailed',
+
+  /** Video playback started successfully after calling `attach`. */
+  VideoPlaybackStarted = 'videoPlaybackStarted',
+
+  /**
+   * Video playback failed.
+   *
+   * args: `(error?: Error)`
+   */
+  VideoPlaybackFailed = 'videoPlaybackFailed',
+
+  /**
+   * The visibility of the video element changed (adaptive stream).
+   *
+   * args: `(visible: boolean, track: RemoteVideoTrack)`
+   */
+  VisibilityChanged = 'visibilityChanged',
+
+  /**
+   * The dimensions of the video element changed (adaptive stream).
+   *
+   * args: `(dimensions: { width: number; height: number }, track: RemoteVideoTrack)`
+   */
+  VideoDimensionsChanged = 'videoDimensionsChanged',
+
+  /**
+   * The upstream (publisher to SFU) has been paused by the SFU due to
+   * lack of subscribers.
+   */
+  UpstreamPaused = 'upstreamPaused',
+
+  /** The upstream has resumed after being paused. */
+  UpstreamResumed = 'upstreamResumed',
+
+  /**
+   * Detected complete silence on an audio track after publishing.
+   * This may indicate a hardware issue.
+   */
+  AudioSilenceDetected = 'audioSilenceDetected',
 }
