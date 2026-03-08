@@ -766,20 +766,20 @@ export const defaultScreenShareEncoding: VideoEncoding = {
 /**
  * Pre-defined audio encoding presets.
  */
-export namespace AudioPresets {
+export const AudioPresets = {
   /** 12 kbps — suitable for telephone-quality speech. */
-  export const telephone: AudioPreset = { maxBitrate: 12_000 };
+  telephone: { maxBitrate: 12_000 } as AudioPreset,
   /** 24 kbps — good quality speech. */
-  export const speech: AudioPreset = { maxBitrate: 24_000 };
+  speech: { maxBitrate: 24_000 } as AudioPreset,
   /** 48 kbps — music quality (mono). */
-  export const music: AudioPreset = { maxBitrate: 48_000 };
+  music: { maxBitrate: 48_000 } as AudioPreset,
   /** 64 kbps — music quality (stereo). */
-  export const musicStereo: AudioPreset = { maxBitrate: 64_000 };
+  musicStereo: { maxBitrate: 64_000 } as AudioPreset,
   /** 96 kbps — high quality music (mono). */
-  export const musicHighQuality: AudioPreset = { maxBitrate: 96_000 };
+  musicHighQuality: { maxBitrate: 96_000 } as AudioPreset,
   /** 128 kbps — high quality music (stereo). */
-  export const musicHighQualityStereo: AudioPreset = { maxBitrate: 128_000 };
-}
+  musicHighQualityStereo: { maxBitrate: 128_000 } as AudioPreset,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Video presets (16:9)

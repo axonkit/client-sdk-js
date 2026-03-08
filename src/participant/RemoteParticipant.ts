@@ -201,7 +201,7 @@ export class RemoteParticipant extends Participant {
       this.consumers.delete(subscriptionSid);
     }
 
-    for (const [trackSid, pub] of this.trackPublications) {
+    for (const [, pub] of this.trackPublications) {
       if (pub.track && (pub.track as RemoteTrack).subscriptionSid === subscriptionSid) {
         const track = pub.track as RemoteTrack;
         pub.track = undefined;

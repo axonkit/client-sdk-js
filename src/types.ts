@@ -99,7 +99,7 @@ export interface ByteStreamInfo extends BaseStreamInfo {
 /**
  * Information about an incoming text stream.
  */
-export interface TextStreamInfo extends BaseStreamInfo {}
+export type TextStreamInfo = BaseStreamInfo;
 
 /**
  * Identifies the participant who sent a data stream.

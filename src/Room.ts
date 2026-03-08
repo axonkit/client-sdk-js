@@ -36,9 +36,8 @@ import {
   type DataSubscriptionCreateRequest,
   type DataSubscriptionClosedNotification,
   type ActiveSpeaker,
-  type ReconnectResponse,
 } from './protocol/types';
-import type { RoomOptions, ReconnectPolicy, AdaptiveStreamSettings } from './track/options';
+import type { RoomOptions, ReconnectPolicy } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
 import { LocalTrack } from './track/LocalTrack';

@@ -4,12 +4,6 @@ import { getLogger } from '../utils/logger';
 
 const log = getLogger('Dynacast');
 
-const QUALITY_RID_MAP: Record<number, string> = {
-  [VideoQuality.LOW]: 'q',
-  [VideoQuality.MEDIUM]: 'h',
-  [VideoQuality.HIGH]: 'f',
-};
-
 export interface SubscribedQualityUpdate {
   quality: VideoQuality;
   enabled: boolean;

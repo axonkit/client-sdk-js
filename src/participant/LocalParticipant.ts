@@ -15,7 +15,7 @@ import type {
   DataTrackPublishResponse,
 } from '../protocol/types';
 import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions, ScreenShareCaptureOptions, PublishCodecOptions } from '../track/options';
-import { ParticipantEvent, TrackEvent } from '../events';
+import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 import type { ChatMessage, SendTextOptions, StreamTextOptions, StreamBytesOptions, SendFileOptions, PerformRpcParams, RpcInvocationData } from '../types';

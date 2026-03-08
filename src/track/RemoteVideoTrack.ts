@@ -1,5 +1,4 @@
 import { RemoteTrack } from './RemoteTrack';
-import { Track } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { TrackEvent } from '../events';
 import type { AdaptiveStreamSettings } from './options';

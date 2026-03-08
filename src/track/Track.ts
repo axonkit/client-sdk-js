@@ -15,7 +15,7 @@ export interface TrackEvents {
   [TrackEvent.UpstreamPaused]: (track: Track) => void;
   [TrackEvent.UpstreamResumed]: (track: Track) => void;
   [TrackEvent.VisibilityChanged]: (visible: boolean, track: Track) => void;
-  [TrackEvent.VideoDimensionsChanged]: (dimensions: Track.Dimensions, track: Track) => void;
+  [TrackEvent.VideoDimensionsChanged]: (dimensions: TrackDimensions, track: Track) => void;
   [TrackEvent.AudioSilenceDetected]: () => void;
 }
 
@@ -140,9 +140,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   }
 }
 
-export namespace Track {
-  export interface Dimensions {
-    width: number;
-    height: number;
-  }
+export interface TrackDimensions {
+  width: number;
+  height: number;
 }
