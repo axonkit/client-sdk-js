@@ -17,10 +17,9 @@ export interface TrackEvents {
   [TrackEvent.VisibilityChanged]: (visible: boolean, track: Track) => void;
   [TrackEvent.VideoDimensionsChanged]: (dimensions: TrackDimensions, track: Track) => void;
   [TrackEvent.AudioSilenceDetected]: () => void;
+  [TrackEvent.TimeSyncUpdate]: (update: { timestamp: number; rtpTimestamp: number }) => void;
 }
 
-// Keep old audio elements for re-use. On iOS Safari, tracks which audio
-// elements have been "blessed" by the user are remembered by the browser.
 const recycledElements: HTMLAudioElement[] = [];
 
 export abstract class Track extends TypedEventEmitter<TrackEvents> {
@@ -31,7 +30,10 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   mediaStreamTrack: MediaStreamTrack;
   isMuted = false;
 
-  protected attachedElements: Set<HTMLMediaElement> = new Set();
+  attachedElements: HTMLMediaElement[] = [];
+
+  protected _currentBitrate = 0;
+  protected monitorInterval?: ReturnType<typeof setInterval>;
 
   constructor(
     kind: TrackKind,
@@ -50,6 +52,13 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     this.isMuted = !mediaStreamTrack.enabled;
   }
 
+  /** Current bitrate in bits per second, updated by the monitor. */
+  get currentBitrate(): number {
+    return this._currentBitrate;
+  }
+
+  abstract get isLocal(): boolean;
+
   setMuted(value: boolean): void {
     if (this.isMuted === value) return;
     this.isMuted = value;
@@ -57,10 +66,22 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     this.emit(value ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 
+  /** @internal */
+  startMonitor(): void {
+    // overridden by subclasses
+  }
+
+  /** @internal */
+  stopMonitor(): void {
+    if (this.monitorInterval) {
+      clearInterval(this.monitorInterval);
+      this.monitorInterval = undefined;
+    }
+  }
+
   attach(element?: HTMLMediaElement): HTMLMediaElement {
     if (!element) {
       if (this.kind === TrackKind.Audio) {
-        // Try to reuse a recycled audio element (iOS Safari workaround)
         const recycled = recycledElements.find((e) => e.parentElement === null);
         if (recycled) {
           recycledElements.splice(recycledElements.indexOf(recycled), 1);
@@ -78,12 +99,14 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
       }
     }
 
+    if (!this.attachedElements.includes(element)) {
+      this.attachedElements.push(element);
+    }
+
     const stream = new MediaStream([this.mediaStreamTrack]);
-    // Avoid setting muted attribute for elements with audio
     element.muted = stream.getAudioTracks().length === 0;
     element.srcObject = stream;
 
-    this.attachedElements.add(element);
     this.emit(TrackEvent.ElementAttached, element);
 
     const hasAudio = stream.getAudioTracks().length > 0;
@@ -95,7 +118,6 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
         if (e.name === 'NotAllowedError') {
           this.emit(hasAudio ? TrackEvent.AudioPlaybackFailed : TrackEvent.VideoPlaybackFailed, e);
         }
-        // If audio playback blocked, try muted video playback
         if (hasAudio && element && stream.getVideoTracks().length > 0 && e.name === 'NotAllowedError') {
           element.muted = true;
           element.play().catch(() => {});
@@ -110,7 +132,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
       this.detachElement(element);
       return [element];
     }
-    const elements = Array.from(this.attachedElements);
+    const elements = [...this.attachedElements];
     for (const el of elements) {
       this.detachElement(el);
     }
@@ -119,7 +141,10 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
 
   private detachElement(element: HTMLMediaElement): void {
     element.srcObject = null;
-    this.attachedElements.delete(element);
+    const idx = this.attachedElements.indexOf(element);
+    if (idx >= 0) {
+      this.attachedElements.splice(idx, 1);
+    }
     this.recycleElement(element);
     this.emit(TrackEvent.ElementDetached, element);
   }
@@ -127,7 +152,6 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   private recycleElement(element: HTMLMediaElement): void {
     if (element instanceof HTMLAudioElement) {
       element.pause();
-      // Only keep one recycled element
       if (recycledElements.length === 0 || recycledElements.every((e) => e.parentElement !== null)) {
         recycledElements.push(element);
       }
@@ -135,6 +159,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   }
 
   stop(): void {
+    this.stopMonitor();
     this.mediaStreamTrack?.stop();
     this.detach();
   }

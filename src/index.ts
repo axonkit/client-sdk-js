@@ -6,7 +6,7 @@ export type { RoomEvents, ConnectOptions } from './Room';
 export { RoomEvent, ParticipantEvent, TrackEvent } from './events';
 
 // Participants
-export { Participant, TrackPublication, SubscriptionStatus } from './participant/Participant';
+export { Participant, TrackPublication, SubscriptionStatus, PermissionStatus } from './participant/Participant';
 export type { ParticipantEvents } from './participant/Participant';
 export { LocalParticipant } from './participant/LocalParticipant';
 export { RemoteParticipant } from './participant/RemoteParticipant';
@@ -15,7 +15,7 @@ export { RemoteTrackPublication } from './participant/RemoteTrackPublication';
 
 // Tracks
 export { Track } from './track/Track';
-export type { TrackEvents } from './track/Track';
+export type { TrackEvents, TrackDimensions } from './track/Track';
 export { LocalTrack } from './track/LocalTrack';
 export { LocalAudioTrack } from './track/LocalAudioTrack';
 export { LocalVideoTrack } from './track/LocalVideoTrack';
@@ -84,13 +84,17 @@ export {
   VideoQuality,
   DisconnectReason,
   ParticipantState,
+  ParticipantKind,
   ConnectionQuality,
+  AudioTrackFeature,
 } from './protocol/types';
 
 export type {
   RoomInfo,
   ServerInfo,
   ParticipantInfo,
+  ParticipantPermission,
+  ParticipantTrackPermission,
   TrackInfo,
   ActiveSpeaker,
   VideoLayer,

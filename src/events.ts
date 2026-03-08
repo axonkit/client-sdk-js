@@ -208,11 +208,13 @@ export enum RoomEvent {
    */
   ChatMessage = 'chatMessage',
 
+
+
   /**
-   * An RPC method has been invoked by a remote participant.
-   * Use `room.registerRpcMethod` to handle RPC calls.
+   * Video playback status has changed. Similar to
+   * {@link RoomEvent.AudioPlaybackStatusChanged} but for video.
    */
-  RpcMethodInvoked = 'rpcMethodInvoked',
+  VideoPlaybackStatusChanged = 'videoPlaybackStatusChanged',
 }
 
 /**
@@ -292,6 +294,9 @@ export enum ParticipantEvent {
 
   /** The connection quality of this participant has changed. */
   ConnectionQualityChanged = 'connectionQualityChanged',
+
+  /** The participant's permissions have changed. */
+  PermissionsChanged = 'permissionsChanged',
 
   /** Data received from this participant. */
   DataReceived = 'dataReceived',
@@ -393,4 +398,12 @@ export enum TrackEvent {
    * This may indicate a hardware issue.
    */
   AudioSilenceDetected = 'audioSilenceDetected',
+
+  /**
+   * Fired when a new time-sync update is available for a remote track.
+   * Provides the RTP timestamp and the corresponding local timestamp.
+   *
+   * args: `(update: { timestamp: number; rtpTimestamp: number })`
+   */
+  TimeSyncUpdate = 'timeSyncUpdate',
 }

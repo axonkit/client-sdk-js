@@ -13,6 +13,7 @@ import type {
   TrackPublishResponse,
   DataTrackPublishRequest,
   DataTrackPublishResponse,
+  ParticipantTrackPermission,
 } from '../protocol/types';
 import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions, ScreenShareCaptureOptions, PublishCodecOptions } from '../track/options';
 import { ParticipantEvent } from '../events';
@@ -29,11 +30,16 @@ export class LocalParticipant extends Participant {
   private transportManager!: TransportManager;
   private producers = new Map<string, mediasoupTypes.Producer>();
   private dataProducers = new Map<string, mediasoupTypes.DataProducer>();
-  private trackSidMap = new Map<string, string>();
   private dataStreamSender?: DataStreamSender;
 
   private _lastCameraError?: Error;
   private _lastMicrophoneError?: Error;
+  private participantTrackPermissions: ParticipantTrackPermission[] = [];
+  private allParticipantsAllowedToSubscribe = true;
+
+  get isLocal(): boolean {
+    return true;
+  }
 
   /** @internal RPC handlers registered by the user for P2P RPC. */
   rpcHandlers = new Map<string, (data: RpcInvocationData) => Promise<string>>();
@@ -294,7 +300,9 @@ export class LocalParticipant extends Participant {
       rpc: this.rpc,
     });
 
-    this.trackPublications.set(trackSid, publication);
+    this.addTrackPublicationToMaps(publication);
+
+    localTrack.startMonitor();
 
     producer.observer.on('pause', () => {
       publication.muted = true;
@@ -326,7 +334,16 @@ export class LocalParticipant extends Participant {
     return publication;
   }
 
-  async unpublishTrack(track: LocalTrack | MediaStreamTrack): Promise<void> {
+  /**
+   * Unpublish a track from the room.
+   * @param track - The track or MediaStreamTrack to unpublish.
+   * @param stopOnUnpublish - Whether to stop the track after unpublishing.
+   *   Defaults to `true`.
+   */
+  async unpublishTrack(
+    track: LocalTrack | MediaStreamTrack,
+    stopOnUnpublish = true,
+  ): Promise<LocalTrackPublication | undefined> {
     let trackSid: string | undefined;
 
     if (track instanceof LocalTrack) {
@@ -340,10 +357,12 @@ export class LocalParticipant extends Participant {
       }
     }
 
-    if (!trackSid) return;
+    if (!trackSid) return undefined;
 
     const producer = this.producers.get(trackSid);
-    const publication = this.trackPublications.get(trackSid);
+    const publication = this.trackPublications.get(trackSid) as
+      | LocalTrackPublication
+      | undefined;
 
     try {
       await this.rpc.request('track.unpublish', { trackSid });
@@ -355,8 +374,8 @@ export class LocalParticipant extends Participant {
     this.producers.delete(trackSid);
 
     if (publication) {
-      this.trackPublications.delete(trackSid);
-      if (publication.track instanceof LocalTrack) {
+      this.removeTrackPublicationFromMaps(trackSid);
+      if (stopOnUnpublish && publication.track instanceof LocalTrack) {
         publication.track.stop();
       }
       this.emit(ParticipantEvent.TrackUnpublished, publication);
@@ -364,6 +383,7 @@ export class LocalParticipant extends Participant {
     }
 
     log.info(`Unpublished track ${trackSid}`);
+    return publication;
   }
 
   async publishData(data: Uint8Array, options?: DataPublishOptions): Promise<void> {
@@ -396,33 +416,80 @@ export class LocalParticipant extends Participant {
     log.info(`Published data track ${resp.dataTrackSid}`);
   }
 
-  async updateMetadata(metadata: string): Promise<void> {
+  /**
+   * Sets and updates the metadata of the local participant.
+   * Note: this requires `canUpdateMetadata` permission.
+   */
+  async setMetadata(metadata: string): Promise<void> {
     await this.rpc.request('participant.update', { metadata });
     this.metadata = metadata;
   }
 
-  async updateName(name: string): Promise<void> {
+  /**
+   * Sets and updates the name of the local participant.
+   * Note: this requires `canUpdateMetadata` permission.
+   */
+  async setName(name: string): Promise<void> {
     await this.rpc.request('participant.update', { name });
     this.name = name;
   }
 
-  async updateAttributes(attributes: Record<string, string>): Promise<void> {
+  /**
+   * Set or update participant attributes. It will make updates only to keys that
+   * are present in `attributes`, and will not override others.
+   * Note: this requires `canUpdateMetadata` permission.
+   */
+  async setAttributes(attributes: Record<string, string>): Promise<void> {
     await this.rpc.request('participant.update', { attributes });
     this.attributes = { ...this.attributes, ...attributes };
+  }
+
+  /**
+   * Control who can subscribe to LocalParticipant's published tracks.
+   *
+   * By default, all participants can subscribe. This allows fine-grained control over
+   * who is able to subscribe at a participant and track level.
+   *
+   * @param allParticipantsAllowed - Allows all participants to subscribe all tracks.
+   *   Takes precedence over `participantTrackPermissions` if set to true.
+   * @param participantTrackPermissions - Full list of individual permissions per
+   *   participant/track. Any omitted participants will not receive any permissions.
+   */
+  setTrackSubscriptionPermissions(
+    allParticipantsAllowed: boolean,
+    participantTrackPermissions: ParticipantTrackPermission[] = [],
+  ): void {
+    this.participantTrackPermissions = participantTrackPermissions;
+    this.allParticipantsAllowedToSubscribe = allParticipantsAllowed;
+    this.updateTrackSubscriptionPermissions();
+  }
+
+  private updateTrackSubscriptionPermissions(): void {
+    this.rpc.request('subscription.updatePermissions', {
+      allParticipantsAllowed: this.allParticipantsAllowedToSubscribe,
+      trackPermissions: this.participantTrackPermissions,
+    }).catch(() => {});
   }
 
   // --- Chat Messages ---
 
   /**
    * Send a chat message to all participants in the room.
+   * @param text - The message text.
+   * @param options - Optional settings such as `topic`, `destinationIdentities`, or `attributes`.
    */
-  async sendChatMessage(text: string): Promise<ChatMessage> {
+  async sendChatMessage(text: string, options?: SendTextOptions): Promise<ChatMessage> {
     const msg: ChatMessage = {
       id: crypto.randomUUID(),
       message: text,
       timestamp: Date.now(),
     };
-    this.rpc.notify('chat.message', msg);
+    this.rpc.notify('chat.message', {
+      ...msg,
+      destinationIdentities: options?.destinationIdentities,
+      topic: options?.topic,
+      attributes: options?.attributes,
+    });
     this.emit(ParticipantEvent.ChatMessage, msg);
     return msg;
   }
@@ -596,13 +663,88 @@ export class LocalParticipant extends Participant {
     this.producers.clear();
     this.dataProducers.clear();
     this.trackPublications.clear();
+    this.audioTrackPublications.clear();
+    this.videoTrackPublications.clear();
+  }
+
+  /**
+   * Unpublish all tracks matching the given sources, or all tracks if no sources specified.
+   */
+  async unpublishTracks(tracks: LocalTrack[]): Promise<void> {
+    await Promise.all(tracks.map((t) => this.unpublishTrack(t)));
+  }
+
+  /**
+   * Create local tracks without publishing. Useful for creating preview tracks.
+   */
+  async createTracks(options?: {
+    audio?: AudioCaptureOptions | boolean;
+    video?: VideoCaptureOptions | boolean;
+  }): Promise<LocalTrack[]> {
+    const tracks: LocalTrack[] = [];
+    if (options?.audio !== false) {
+      const audioOptions = typeof options?.audio === 'object' ? options.audio : undefined;
+      tracks.push(await createLocalAudioTrack(audioOptions));
+    }
+    if (options?.video !== false) {
+      const videoOptions = typeof options?.video === 'object' ? options.video : undefined;
+      tracks.push(await createLocalVideoTrack(videoOptions));
+    }
+    return tracks;
+  }
+
+  /**
+   * Create screen share tracks without publishing.
+   */
+  async createScreenTracks(options?: ScreenShareCaptureOptions): Promise<LocalTrack[]> {
+    return createLocalScreenTracks(options);
+  }
+
+  /**
+   * Re-publish all currently published tracks. Useful after a full reconnect
+   * or when changing publish options globally.
+   * @param options - Override publish options for all tracks.
+   * @param restartTracks - Whether to restart ended tracks before republishing.
+   */
+  async republishAllTracks(
+    options?: TrackPublishOptions,
+    restartTracks = true,
+  ): Promise<void> {
+    const publications = [...this.trackPublications.values()];
+    this.clearPublications();
+
+    for (const pub of publications) {
+      if (!pub.track) continue;
+      const localTrack = pub.track as LocalTrack;
+      localTrack.producer = undefined;
+
+      if (restartTracks && localTrack.mediaStreamTrack?.readyState === 'ended') {
+        try {
+          await localTrack.restart();
+        } catch (err) {
+          log.warn(`Failed to restart track ${pub.trackSid}`, err);
+          continue;
+        }
+      }
+
+      try {
+        await this.publishTrack(localTrack, {
+          name: pub.trackName,
+          source: pub.source,
+          ...options,
+        });
+      } catch (err) {
+        log.warn(`Failed to republish track ${pub.trackSid}`, err);
+      }
+    }
   }
 
   /** @internal */
   clearPublications(): void {
     this.producers.clear();
     this.dataProducers.clear();
-    this.trackSidMap.clear();
     this.trackPublications.clear();
+    this.audioTrackPublications.clear();
+    this.videoTrackPublications.clear();
   }
 }

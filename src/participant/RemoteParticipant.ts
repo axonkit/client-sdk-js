@@ -26,6 +26,10 @@ export class RemoteParticipant extends Participant {
   private dataConsumers = new Map<string, mediasoupTypes.DataConsumer>();
   private streamReceiver?: DataStreamReceiver;
 
+  get isLocal(): boolean {
+    return false;
+  }
+
   /** @internal */
   init(transportManager: TransportManager, rpc: RPCClient, streamReceiver?: DataStreamReceiver): void {
     this.transportManager = transportManager;
@@ -43,6 +47,29 @@ export class RemoteParticipant extends Participant {
     return this.dataConsumers;
   }
 
+  /**
+   * Set the output volume for all audio tracks from this participant.
+   * @param volume - Value between 0 and 1.
+   */
+  setVolume(volume: number): void {
+    for (const pub of this.audioTrackPublications.values()) {
+      const track = pub.track as RemoteAudioTrack | undefined;
+      track?.setVolume(volume);
+    }
+  }
+
+  /**
+   * Get the current output volume for this participant's audio tracks.
+   * Returns the volume of the first audio track, or 1 if none.
+   */
+  getVolume(): number {
+    for (const pub of this.audioTrackPublications.values()) {
+      const track = pub.track as RemoteAudioTrack | undefined;
+      if (track) return track.volume;
+    }
+    return 1;
+  }
+
   static fromInfo(info: ParticipantInfo): RemoteParticipant {
     const p = new RemoteParticipant(info.sid, info.identity, info.name, info.metadata);
     p.state = info.state;
@@ -56,6 +83,7 @@ export class RemoteParticipant extends Participant {
     return p;
   }
 
+  /** @internal */
   addTrackPublication(info: TrackInfo): RemoteTrackPublication {
     const pub = new RemoteTrackPublication({
       trackSid: info.sid,
@@ -65,16 +93,15 @@ export class RemoteParticipant extends Participant {
       muted: info.muted,
       info,
     });
-    this.trackPublications.set(info.sid, pub);
+    this.addTrackPublicationToMaps(pub);
     this.emit(ParticipantEvent.TrackPublished, pub);
     return pub;
   }
 
+  /** @internal */
   removeTrackPublication(trackSid: string): TrackPublication | undefined {
-    const pub = this.trackPublications.get(trackSid);
+    const pub = this.removeTrackPublicationFromMaps(trackSid);
     if (!pub) return undefined;
-
-    this.trackPublications.delete(trackSid);
 
     if (pub.track) {
       const track = pub.track as RemoteTrack;
@@ -111,6 +138,7 @@ export class RemoteParticipant extends Participant {
     track.subscriptionSid = req.subscriptionSid;
     track.publisherSid = req.publisherSid;
     track.isMuted = req.trackMuted;
+    track.consumer = consumer;
 
     let pub = this.trackPublications.get(req.trackSid) as RemoteTrackPublication | undefined;
     if (pub) {
@@ -128,7 +156,7 @@ export class RemoteParticipant extends Participant {
         consumer,
         rpc: this.rpc,
       });
-      this.trackPublications.set(req.trackSid, pub);
+      this.addTrackPublicationToMaps(pub);
     }
 
     const publication = pub;
@@ -154,6 +182,7 @@ export class RemoteParticipant extends Participant {
       this.consumers.delete(req.subscriptionSid);
     });
 
+    track.startMonitor();
     this.emit(ParticipantEvent.TrackSubscribed, track, publication);
 
     log.info(`Subscribed to track ${req.trackSid} via subscription ${req.subscriptionSid}`);
@@ -221,6 +250,7 @@ export class RemoteParticipant extends Participant {
     }
   }
 
+  /** @internal */
   setTrackMuted(trackSid: string, muted: boolean): void {
     const pub = this.trackPublications.get(trackSid);
     if (!pub) return;
@@ -248,5 +278,7 @@ export class RemoteParticipant extends Participant {
     this.consumers.clear();
     this.dataConsumers.clear();
     this.trackPublications.clear();
+    this.audioTrackPublications.clear();
+    this.videoTrackPublications.clear();
   }
 }

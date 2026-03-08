@@ -36,6 +36,15 @@ export enum VideoQuality {
   HIGH = 2,
 }
 
+export enum AudioTrackFeature {
+  AutoGainControl = 'auto_gain_control',
+  EchoCancellation = 'echo_cancellation',
+  NoiseSuppression = 'noise_suppression',
+  Stereo = 'stereo',
+  NoDtx = 'no_dtx',
+  EnhancedNoiseCancellation = 'enhanced_noise_cancellation',
+}
+
 export enum DisconnectReason {
   UnknownReason = 0,
   ClientInitiated = 1,
@@ -141,6 +150,28 @@ export interface RoomInfo {
   sid: string;
   name: string;
   metadata?: string;
+  numParticipants?: number;
+  numPublishers?: number;
+  activeRecording?: boolean;
+}
+
+export enum ParticipantKind {
+  Standard = 0,
+  Ingress = 1,
+  Egress = 2,
+  Sip = 3,
+  Agent = 4,
+}
+
+export interface ParticipantPermission {
+  canPublish: boolean;
+  canSubscribe: boolean;
+  canPublishData: boolean;
+  canPublishSources: TrackSource[];
+  canUpdateMetadata: boolean;
+  hidden: boolean;
+  recorder: boolean;
+  agent: boolean;
 }
 
 export interface ParticipantInfo {
@@ -151,6 +182,9 @@ export interface ParticipantInfo {
   state: ParticipantState;
   tracks?: TrackInfo[];
   attributes?: Record<string, string>;
+  kind?: ParticipantKind;
+  joinedAt?: number;
+  permission?: ParticipantPermission;
 }
 
 export interface TrackInfo {
@@ -365,6 +399,22 @@ export interface ParticipantUpdateRequest {
   metadata?: string;
   name?: string;
   attributes?: Record<string, string>;
+}
+
+export interface ParticipantTrackPermission {
+  /** The participant identity this permission applies to. */
+  participantIdentity?: string;
+  /** The participant server id this permission applies to. */
+  participantSid?: string;
+  /** Grant permission to all tracks. Takes precedence over allowedTrackSids. */
+  allowAll?: boolean;
+  /** List of track sids the target participant can subscribe to. */
+  allowedTrackSids?: string[];
+}
+
+export interface UpdateSubscriptionPermissionsRequest {
+  allParticipantsAllowed: boolean;
+  trackPermissions: ParticipantTrackPermission[];
 }
 
 // --- Server → Client RPC ---

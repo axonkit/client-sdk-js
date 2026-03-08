@@ -3,11 +3,16 @@ import { TrackPublication } from './Participant';
 import type { LocalTrack } from '../track/LocalTrack';
 import type { RPCClient } from '../signal/RPCClient';
 import type { TrackSource, TrackInfo } from '../protocol/types';
+import { AudioTrackFeature, TrackKind } from '../protocol/types';
+import type { TrackPublishOptions } from '../track/options';
 
 export class LocalTrackPublication extends TrackPublication {
   /** @internal */
   producer?: mediasoupTypes.Producer;
   private rpc?: RPCClient;
+
+  /** The options used when publishing the track. */
+  options?: TrackPublishOptions;
 
   /** @internal */
   constructor(init: {
@@ -20,25 +25,86 @@ export class LocalTrackPublication extends TrackPublication {
     info?: TrackInfo;
     producer?: mediasoupTypes.Producer;
     rpc?: RPCClient;
+    options?: TrackPublishOptions;
   }) {
     super(init);
     this.producer = init.producer;
     this.rpc = init.rpc;
+    this.options = init.options;
   }
 
-  get localTrack(): LocalTrack | undefined {
-    return this.track as LocalTrack | undefined;
+  override get isLocal(): boolean {
+    return true;
   }
 
-  override mute(): void {
+  override get isMuted(): boolean {
+    const localTrack = this.track as LocalTrack | undefined;
+    if (localTrack) {
+      return localTrack.isMuted;
+    }
+    return super.isMuted;
+  }
+
+  /** Whether upstream publishing is paused for this track. */
+  get isUpstreamPaused(): boolean {
+    return (this.track as LocalTrack | undefined)?.isUpstreamPaused ?? false;
+  }
+
+  /** Mute the track associated with this publication. */
+  override async mute(): Promise<LocalTrack | undefined> {
+    const localTrack = this.track as LocalTrack | undefined;
     this.producer?.pause();
-    this.localTrack?.setMuted(true);
+    localTrack?.setMuted(true);
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: true }).catch(() => {});
+    return localTrack;
   }
 
-  override unmute(): void {
+  /** Unmute the track associated with this publication. */
+  override async unmute(): Promise<LocalTrack | undefined> {
+    const localTrack = this.track as LocalTrack | undefined;
     this.producer?.resume();
-    this.localTrack?.setMuted(false);
+    localTrack?.setMuted(false);
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: false }).catch(() => {});
+    return localTrack;
+  }
+
+  /**
+   * Pause publishing to the server without disabling the local MediaStreamTrack.
+   */
+  async pauseUpstream(): Promise<void> {
+    await (this.track as LocalTrack | undefined)?.pauseUpstream();
+  }
+
+  /**
+   * Resume publishing after a call to {@link pauseUpstream}.
+   */
+  async resumeUpstream(): Promise<void> {
+    await (this.track as LocalTrack | undefined)?.resumeUpstream();
+  }
+
+  /**
+   * Returns a list of audio track features detected from the current track settings.
+   * Only applicable to audio tracks.
+   */
+  getTrackFeatures(): AudioTrackFeature[] {
+    if (this.kind !== TrackKind.Audio || !this.track) return [];
+    const settings = this.track.mediaStreamTrack.getSettings();
+    const features: Set<AudioTrackFeature> = new Set();
+    if (settings.autoGainControl) {
+      features.add(AudioTrackFeature.AutoGainControl);
+    }
+    if (settings.echoCancellation) {
+      features.add(AudioTrackFeature.EchoCancellation);
+    }
+    if (settings.noiseSuppression) {
+      features.add(AudioTrackFeature.NoiseSuppression);
+    }
+    if (settings.channelCount && settings.channelCount > 1) {
+      features.add(AudioTrackFeature.Stereo);
+    }
+    if (this.options && !this.options.dtx) {
+      features.add(AudioTrackFeature.NoDtx);
+    }
+    return Array.from(features);
   }
 }
