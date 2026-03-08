@@ -53,10 +53,10 @@ export async function createLocalTracks(
   const tracks: LocalTrack[] = [];
 
   for (const at of stream.getAudioTracks()) {
-    tracks.push(new LocalAudioTrack(at, at.label, constraints.audio as MediaTrackConstraints));
+    tracks.push(new LocalAudioTrack(at, constraints.audio as MediaTrackConstraints));
   }
   for (const vt of stream.getVideoTracks()) {
-    tracks.push(new LocalVideoTrack(vt, vt.label, TrackSource.Camera, constraints.video as MediaTrackConstraints));
+    tracks.push(new LocalVideoTrack(vt, TrackSource.Camera, constraints.video as MediaTrackConstraints));
   }
 
   return tracks;
@@ -73,7 +73,7 @@ export async function createLocalAudioTrack(
   const constraints = audioConstraints(options ?? defaultAudioCaptureOptions);
   const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
   const track = stream.getAudioTracks()[0];
-  return new LocalAudioTrack(track, track.label, constraints);
+  return new LocalAudioTrack(track, constraints);
 }
 
 /**
@@ -87,7 +87,7 @@ export async function createLocalVideoTrack(
   const constraints = videoConstraints(options ?? defaultVideoCaptureOptions);
   const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
   const track = stream.getVideoTracks()[0];
-  return new LocalVideoTrack(track, track.label, TrackSource.Camera, constraints);
+  return new LocalVideoTrack(track, TrackSource.Camera, constraints);
 }
 
 /**
@@ -113,11 +113,12 @@ export async function createLocalScreenTracks(
   const tracks: LocalTrack[] = [];
 
   for (const vt of stream.getVideoTracks()) {
-    tracks.push(new LocalVideoTrack(vt, vt.label, TrackSource.ScreenShare));
+    tracks.push(new LocalVideoTrack(vt, TrackSource.ScreenShare));
   }
   for (const at of stream.getAudioTracks()) {
-    tracks.push(new LocalAudioTrack(at, at.label));
-    tracks[tracks.length - 1].source = TrackSource.ScreenShareAudio;
+    const audioTrack = new LocalAudioTrack(at);
+    audioTrack.source = TrackSource.ScreenShareAudio;
+    tracks.push(audioTrack);
   }
 
   return tracks;

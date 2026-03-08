@@ -18,11 +18,10 @@ export class LocalVideoTrack extends LocalTrack {
 
   constructor(
     mediaStreamTrack: MediaStreamTrack,
-    name?: string,
     source: TrackSource = TrackSource.Camera,
     constraints?: MediaTrackConstraints,
   ) {
-    super(TrackKind.Video, mediaStreamTrack, name, source, constraints);
+    super(TrackKind.Video, mediaStreamTrack, source, constraints);
   }
 
   get dimensions(): VideoResolution | undefined {
@@ -91,7 +90,7 @@ export class LocalVideoTrack extends LocalTrack {
     }
 
     await sender.setParameters(params);
-    log.debug(`Dynacast quality updated for ${this.name}`);
+    log.debug(`Dynacast quality updated for ${this.sid ?? 'unknown'}`);
   }
 
   async setSubscriptionStatus(hasSubscribers: boolean): Promise<void> {
@@ -102,7 +101,7 @@ export class LocalVideoTrack extends LocalTrack {
     } else {
       this.producer.pause();
     }
-    log.debug(`Subscription status: hasSubscribers=${hasSubscribers} for ${this.name}`);
+    log.debug(`Subscription status: hasSubscribers=${hasSubscribers} for ${this.sid ?? 'unknown'}`);
   }
 
   async setDeviceId(deviceId: string): Promise<void> {

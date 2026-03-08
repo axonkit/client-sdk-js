@@ -4,7 +4,7 @@ import { LocalTrackPublication } from './LocalTrackPublication';
 import { LocalTrack } from '../track/LocalTrack';
 import { LocalAudioTrack } from '../track/LocalAudioTrack';
 import { LocalVideoTrack } from '../track/LocalVideoTrack';
-import { createLocalAudioTrack, createLocalVideoTrack, createLocalScreenTracks } from '../track/create';
+import { createLocalTracks, createLocalAudioTrack, createLocalVideoTrack, createLocalScreenTracks } from '../track/create';
 import { RPCClient } from '../signal/RPCClient';
 import { TransportManager } from '../transport/TransportManager';
 import { TrackKind, TrackSource } from '../protocol/types';
@@ -148,34 +148,32 @@ export class LocalParticipant extends Participant {
 
   /**
    * Enable both camera and microphone simultaneously.
-   * More efficient than calling `setCameraEnabled` and `setMicrophoneEnabled`
-   * separately because it batches the device request.
+   * Uses a single `getUserMedia` call so the user only grants permission once.
    */
   async enableCameraAndMicrophone(
     captureOptions?: { audio?: AudioCaptureOptions; video?: VideoCaptureOptions },
     publishOptions?: TrackPublishOptions,
   ): Promise<void> {
-    const [audioTrack, videoTrack] = await Promise.all([
-      createLocalAudioTrack(captureOptions?.audio).catch((e) => {
-        this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
-        log.warn('Failed to create audio track', e);
-        return undefined;
-      }),
-      createLocalVideoTrack(captureOptions?.video).catch((e) => {
-        this._lastCameraError = e instanceof Error ? e : new Error(String(e));
-        log.warn('Failed to create video track', e);
-        return undefined;
-      }),
-    ]);
+    let tracks: LocalTrack[];
+    try {
+      tracks = await createLocalTracks({
+        audio: captureOptions?.audio ?? true,
+        video: captureOptions?.video ?? true,
+      });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      this._lastMicrophoneError = err;
+      this._lastCameraError = err;
+      log.warn('Failed to create local tracks', e);
+      return;
+    }
 
-    const results = await Promise.allSettled([
-      audioTrack
-        ? this.publishTrack(audioTrack, { ...publishOptions, source: TrackSource.Microphone })
-        : Promise.resolve(),
-      videoTrack
-        ? this.publishTrack(videoTrack, { ...publishOptions, source: TrackSource.Camera })
-        : Promise.resolve(),
-    ]);
+    const results = await Promise.allSettled(
+      tracks.map((track) => {
+        const source = track.kind === TrackKind.Audio ? TrackSource.Microphone : TrackSource.Camera;
+        return this.publishTrack(track, { ...publishOptions, source });
+      }),
+    );
 
     for (const r of results) {
       if (r.status === 'rejected') {
@@ -247,7 +245,7 @@ export class LocalParticipant extends Participant {
         try {
           const req: TrackPublishRequest = {
             clientTrackId,
-            name: options?.name ?? localTrack.name,
+            name: options?.name ?? localTrack.mediaStreamTrack.label,
             kind: localTrack.kind,
             rtpParameters: params.rtpParameters,
             source: localTrack.source,
@@ -291,7 +289,7 @@ export class LocalParticipant extends Participant {
 
     const publication = new LocalTrackPublication({
       trackSid,
-      trackName: options?.name ?? localTrack.name,
+      trackName: options?.name ?? localTrack.mediaStreamTrack.label,
       kind: localTrack.kind,
       source: localTrack.source,
       track: localTrack,

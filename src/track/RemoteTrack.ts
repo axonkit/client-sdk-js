@@ -23,11 +23,10 @@ export class RemoteTrack extends Track {
 
   constructor(
     kind: TrackKind,
-    name: string,
     source: TrackSource = TrackSource.Unknown,
     mediaStreamTrack: MediaStreamTrack,
   ) {
-    super(kind, name, source, mediaStreamTrack);
+    super(kind, source, mediaStreamTrack);
   }
 
   get isLocal(): boolean {
@@ -57,12 +56,12 @@ export class RemoteTrack extends Track {
   /** Start receiving and monitoring. */
   start(): void {
     this.startMonitor();
-    this.mediaStreamTrack.enabled = true;
+    this.consumer?.resume();
   }
 
   override stop(): void {
     this.stopMonitor();
-    this.mediaStreamTrack.enabled = false;
+    this.consumer?.pause();
   }
 
   /** @internal */

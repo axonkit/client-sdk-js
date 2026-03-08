@@ -129,9 +129,9 @@ export class RemoteParticipant extends Participant {
 
     let track: RemoteTrack;
     if (req.kind === TrackKind.Audio) {
-      track = new RemoteAudioTrack(req.subscriptionSid, consumer.track);
+      track = new RemoteAudioTrack(consumer.track);
     } else {
-      track = new RemoteVideoTrack(req.subscriptionSid, TrackSource.Camera, consumer.track);
+      track = new RemoteVideoTrack(TrackSource.Camera, consumer.track);
     }
 
     track.sid = req.trackSid;

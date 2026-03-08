@@ -28,11 +28,10 @@ export class RemoteVideoTrack extends RemoteTrack {
   private pipElement?: HTMLVideoElement;
 
   constructor(
-    name: string,
     source: TrackSource = TrackSource.Camera,
     mediaStreamTrack: MediaStreamTrack,
   ) {
-    super(TrackKind.Video, name, source, mediaStreamTrack);
+    super(TrackKind.Video, source, mediaStreamTrack);
   }
 
   get isAdaptiveStream(): boolean {

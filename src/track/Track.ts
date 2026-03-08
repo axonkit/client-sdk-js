@@ -25,7 +25,6 @@ const recycledElements: HTMLAudioElement[] = [];
 
 export abstract class Track extends TypedEventEmitter<TrackEvents> {
   kind: TrackKind;
-  name: string;
   source: TrackSource;
   sid?: string;
   mediaStreamTrack: MediaStreamTrack;
@@ -39,13 +38,11 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
 
   constructor(
     kind: TrackKind,
-    name: string,
     source: TrackSource = TrackSource.Unknown,
     mediaStreamTrack: MediaStreamTrack,
   ) {
     super();
     this.kind = kind;
-    this.name = name;
     this.source = source;
     this.mediaStreamTrack = mediaStreamTrack;
     mediaStreamTrack.addEventListener('ended', () => {

@@ -4,10 +4,9 @@ import { TrackKind, TrackSource } from '../protocol/types';
 export class LocalAudioTrack extends LocalTrack {
   constructor(
     mediaStreamTrack: MediaStreamTrack,
-    name?: string,
     constraints?: MediaTrackConstraints,
   ) {
-    super(TrackKind.Audio, mediaStreamTrack, name, TrackSource.Microphone, constraints);
+    super(TrackKind.Audio, mediaStreamTrack, TrackSource.Microphone, constraints);
   }
 
   async setDeviceId(deviceId: string): Promise<void> {

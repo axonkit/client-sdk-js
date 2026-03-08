@@ -26,17 +26,11 @@ export class LocalTrack extends Track {
   constructor(
     kind: TrackKind,
     mediaStreamTrack: MediaStreamTrack,
-    name?: string,
     source?: TrackSource,
     constraints?: MediaTrackConstraints,
     userProvided = false,
   ) {
-    super(
-      kind,
-      name ?? mediaStreamTrack.label,
-      source ?? TrackSource.Unknown,
-      mediaStreamTrack,
-    );
+    super(kind, source ?? TrackSource.Unknown, mediaStreamTrack);
     this._constraints = constraints;
     this._providedByUser = userProvided;
   }
@@ -246,7 +240,7 @@ export class LocalTrack extends Track {
     if (!newTrack) throw new Error('Failed to get new media track');
 
     await this.replaceTrack(newTrack);
-    log.info(`Track ${this.name} restarted`);
+    log.info(`Track ${this.sid ?? 'unknown'} restarted`);
     (this as any).emit(TrackEvent.Restarted, this);
   }
 
@@ -282,7 +276,7 @@ export class LocalTrack extends Track {
       this._processor = undefined;
     }
     super.stop();
-    log.debug(`Track ${this.name} stopped`);
+    log.debug(`Track ${this.sid ?? 'unknown'} stopped`);
   }
 
   protected setTrackMuted(muted: boolean): void {
