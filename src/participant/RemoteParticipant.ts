@@ -137,8 +137,10 @@ export class RemoteParticipant extends Participant {
     track.sid = req.trackSid;
     track.subscriptionSid = req.subscriptionSid;
     track.publisherSid = req.publisherSid;
-    track.isMuted = req.trackMuted;
     track.consumer = consumer;
+    if (req.trackMuted) {
+      track.setMuted(true);
+    }
 
     let pub = this.trackPublications.get(req.trackSid) as RemoteTrackPublication | undefined;
     if (pub) {

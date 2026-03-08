@@ -29,7 +29,6 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   source: TrackSource;
   sid?: string;
   mediaStreamTrack: MediaStreamTrack;
-  isMuted = false;
 
   private _streamState: StreamState = StreamState.Active;
 
@@ -52,7 +51,6 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     mediaStreamTrack.addEventListener('ended', () => {
       this.emit(TrackEvent.Ended, this);
     });
-    this.isMuted = !mediaStreamTrack.enabled;
   }
 
   /** Current bitrate in bits per second, updated by the monitor. */
@@ -62,11 +60,11 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
 
   abstract get isLocal(): boolean;
 
-  setMuted(value: boolean): void {
-    if (this.isMuted === value) return;
-    this.isMuted = value;
-    this.mediaStreamTrack.enabled = !value;
-    this.emit(value ? TrackEvent.Muted : TrackEvent.Unmuted, this);
+  /**
+   * Whether the track is currently muted.
+   */
+  get isMuted(): boolean {
+    return !this.mediaStreamTrack.enabled;
   }
 
   /**
@@ -109,9 +107,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
         }
       }
       if (!element) {
-        element = document.createElement(
-          this.kind === TrackKind.Audio ? 'audio' : 'video',
-        );
+        element = document.createElement(this.kind === TrackKind.Audio ? 'audio' : 'video');
       }
       element.autoplay = true;
       if (this.kind === TrackKind.Video) {
@@ -130,7 +126,8 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     this.emit(TrackEvent.ElementAttached, element);
 
     const hasAudio = stream.getAudioTracks().length > 0;
-    element.play()
+    element
+      .play()
       .then(() => {
         this.emit(hasAudio ? TrackEvent.AudioPlaybackStarted : TrackEvent.VideoPlaybackStarted);
       })
@@ -138,7 +135,12 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
         if (e.name === 'NotAllowedError') {
           this.emit(hasAudio ? TrackEvent.AudioPlaybackFailed : TrackEvent.VideoPlaybackFailed, e);
         }
-        if (hasAudio && element && stream.getVideoTracks().length > 0 && e.name === 'NotAllowedError') {
+        if (
+          hasAudio &&
+          element &&
+          stream.getVideoTracks().length > 0 &&
+          e.name === 'NotAllowedError'
+        ) {
           element.muted = true;
           element.play().catch(() => {});
         }
@@ -172,7 +174,10 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
   private recycleElement(element: HTMLMediaElement): void {
     if (element instanceof HTMLAudioElement) {
       element.pause();
-      if (recycledElements.length === 0 || recycledElements.every((e) => e.parentElement !== null)) {
+      if (
+        recycledElements.length === 0 ||
+        recycledElements.every((e) => e.parentElement !== null)
+      ) {
         recycledElements.push(element);
       }
     }

@@ -287,8 +287,15 @@ export class LocalTrack extends Track {
 
   protected setTrackMuted(muted: boolean): void {
     if (this.isMuted === muted) return;
-    this.isMuted = muted;
-    this.mediaStreamTrack.enabled = !muted;
+    if (this._producer) {
+      if (muted) {
+        this._producer.pause();
+      } else {
+        this._producer.resume();
+      }
+    } else {
+      this.mediaStreamTrack.enabled = !muted;
+    }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 

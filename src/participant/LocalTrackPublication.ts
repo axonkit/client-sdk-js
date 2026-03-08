@@ -53,8 +53,7 @@ export class LocalTrackPublication extends TrackPublication {
   /** Mute the track associated with this publication. */
   override async mute(): Promise<LocalTrack | undefined> {
     const localTrack = this.track as LocalTrack | undefined;
-    this.producer?.pause();
-    localTrack?.setMuted(true);
+    localTrack?.mute();
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: true }).catch(() => {});
     return localTrack;
   }
@@ -62,8 +61,7 @@ export class LocalTrackPublication extends TrackPublication {
   /** Unmute the track associated with this publication. */
   override async unmute(): Promise<LocalTrack | undefined> {
     const localTrack = this.track as LocalTrack | undefined;
-    this.producer?.resume();
-    localTrack?.setMuted(false);
+    localTrack?.unmute();
     this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: false }).catch(() => {});
     return localTrack;
   }

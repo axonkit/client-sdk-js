@@ -35,10 +35,14 @@ export class RemoteTrack extends Track {
   }
 
   /** @internal */
-  override setMuted(muted: boolean): void {
+  setMuted(muted: boolean): void {
     if (this.isMuted === muted) return;
-    this.isMuted = muted;
-    this.mediaStreamTrack.enabled = !muted;
+    if (!this.consumer) return;
+    if (muted) {
+      this.consumer.pause();
+    } else {
+      this.consumer.resume();
+    }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 
