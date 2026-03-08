@@ -2,7 +2,7 @@ import { types as mediasoupTypes } from 'mediasoup-client';
 import { TrackPublication, SubscriptionStatus, PermissionStatus } from './Participant';
 import type { RemoteTrack } from '../track/RemoteTrack';
 import type { RPCClient } from '../signal/RPCClient';
-import type { TrackSource, TrackInfo } from '../protocol/types';
+import type { TrackSource, TrackInfo, VideoLayer } from '../protocol/types';
 import { TrackKind, VideoQuality } from '../protocol/types';
 import { getLogger } from '../utils/logger';
 
@@ -160,7 +160,8 @@ export class RemoteTrackPublication extends TrackPublication {
 
   /**
    * Explicitly set the desired video dimensions for this track.
-   * Takes precedence over adaptive stream dimensions.
+   * The dimensions are mapped to a spatialLayer by comparing against
+   * the published {@link VideoLayer}s in `info.layers`.
    */
   setVideoDimensions(dimensions: { width: number; height: number }): void {
     if (!this.isManualOperationAllowed()) return;
@@ -202,14 +203,14 @@ export class RemoteTrackPublication extends TrackPublication {
   private emitTrackUpdate(): void {
     if (!this.rpc || !this.consumer) return;
 
-    let spatialLayer: number | undefined;
+    let spatialLayer: number;
     let temporalLayer: number | undefined;
-    let width: number | undefined;
-    let height: number | undefined;
 
     if (this._requestedVideoDimensions) {
-      width = this._requestedVideoDimensions.width;
-      height = this._requestedVideoDimensions.height;
+      spatialLayer = this.spatialLayerForDimensions(
+        this._requestedVideoDimensions,
+        this.info?.layers,
+      );
     } else if (this._videoQuality !== undefined) {
       spatialLayer = this._videoQuality === VideoQuality.LOW ? 0
         : this._videoQuality === VideoQuality.MEDIUM ? 1 : 2;
@@ -229,12 +230,30 @@ export class RemoteTrackPublication extends TrackPublication {
 
     this.rpc.request('subscription.setPreferredLayers', {
       subscriptionSid: this.consumer.id,
-      spatialLayer: spatialLayer ?? 2,
+      spatialLayer,
       temporalLayer,
-      width,
-      height,
     }).catch((e) => {
       log.warn('Failed to set preferred layers', e);
     });
+  }
+
+  /**
+   * Pick the smallest layer whose dimensions are >= the requested dimensions.
+   * Falls back to the highest layer if no layer is large enough or no layers are known.
+   */
+  private spatialLayerForDimensions(
+    requested: { width: number; height: number },
+    layers?: VideoLayer[],
+  ): number {
+    if (!layers || layers.length === 0) {
+      return 2;
+    }
+    const sorted = [...layers].sort((a, b) => a.quality - b.quality);
+    for (const layer of sorted) {
+      if (layer.width >= requested.width && layer.height >= requested.height) {
+        return layer.quality;
+      }
+    }
+    return sorted[sorted.length - 1].quality;
   }
 }
