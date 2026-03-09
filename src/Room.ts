@@ -209,9 +209,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   /**
-   * Get all participants currently in the main room (not in any group).
+   * Get all participants.
    */
-  getMainRoomParticipants(): Participant[] {
+  getParticipants(): Participant[] {
     const result: Participant[] = [];
     if (this._localParticipant && !this._localParticipant.groupId) {
       result.push(this._localParticipant);
