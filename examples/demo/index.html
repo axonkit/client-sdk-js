@@ -13,7 +13,7 @@
         padding: 0;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         background: #0f172a;
         color: #e2e8f0;
         min-height: 100vh;
@@ -135,7 +135,7 @@
         border-radius: 12px;
         max-height: 200px;
         overflow-y: auto;
-        font-family: "SF Mono", "Fira Code", monospace;
+        font-family: 'SF Mono', 'Fira Code', monospace;
         font-size: 0.8rem;
         line-height: 1.6;
         color: #94a3b8;
@@ -165,10 +165,6 @@
           <input type="text" id="token" placeholder="JWT token" />
         </div>
         <div class="field">
-          <label>Room Name</label>
-          <input type="text" id="roomName" value="TestRoom" />
-        </div>
-        <div class="field">
           <label>Display Name</label>
           <input type="text" id="displayName" value="John Doe" />
         </div>
@@ -188,20 +184,28 @@
     </div>
 
     <script type="module">
-      import { Room, RoomState, RoomEvent, ParticipantEvent, setLogLevel, LogLevel, TrackSource } from "../../dist/axonkit-client.esm.js";
+      import {
+        Room,
+        RoomState,
+        RoomEvent,
+        ParticipantEvent,
+        setLogLevel,
+        LogLevel,
+        TrackSource,
+      } from '../../dist/axonkit-client.esm.js';
 
       setLogLevel(LogLevel.DEBUG);
 
-      const room = new Room({ autoSubscribe: true, dynacast: true });
+      const room = new Room({ roomName: 'testroom', autoSubscribe: true, dynacast: true });
       const $ = (id) => document.getElementById(id);
 
       let cameraEnabled = false;
       let micEnabled = false;
       let screenEnabled = false;
 
-      function logMsg(text, cls = "info") {
-        const el = $("log");
-        const line = document.createElement("div");
+      function logMsg(text, cls = 'info') {
+        const el = $('log');
+        const line = document.createElement('div');
         line.className = cls;
         line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
         el.appendChild(line);
@@ -212,12 +216,12 @@
         // Prevent duplicate tiles
         if ($(`tile-${id}`)) return $(`video-${id}`);
 
-        const tile = document.createElement("div");
-        tile.className = "video-tile";
+        const tile = document.createElement('div');
+        tile.className = 'video-tile';
         tile.id = `tile-${id}`;
         tile.innerHTML = `<video id="video-${id}" autoplay playsinline></video><div class="label">${label}</div>`;
-        $("videoGrid").appendChild(tile);
-        return tile.querySelector("video");
+        $('videoGrid').appendChild(tile);
+        return tile.querySelector('video');
       }
 
       function removeVideoTile(id) {
@@ -227,109 +231,110 @@
 
       // Local Participant Event Handlers
       function handleLocalTrackPublished(pub) {
-        if (pub.kind === "video") {
+        if (pub.kind === 'video') {
           const el = addVideoTile(`local-${pub.source}`, `You (${pub.source})`);
           pub.track.attach(el);
         }
       }
 
       function handleLocalTrackUnpublished(pub) {
-        if (pub.kind === "video") {
+        if (pub.kind === 'video') {
           removeVideoTile(`local-${pub.source}`);
         }
 
         // Update state variables and buttons when track is unpublished (e.g. via browser UI stop)
-        if (pub.source === "camera") {
+        if (pub.source === 'camera') {
           cameraEnabled = false;
-          $("btnCamera").textContent = "Enable Camera";
-        } else if (pub.source === "microphone") {
+          $('btnCamera').textContent = 'Enable Camera';
+        } else if (pub.source === 'microphone') {
           micEnabled = false;
-          $("btnMic").textContent = "Enable Mic";
-        } else if (pub.source === "screen_share") {
+          $('btnMic').textContent = 'Enable Mic';
+        } else if (pub.source === 'screen_share') {
           screenEnabled = false;
-          $("btnScreen").textContent = "Share Screen";
+          $('btnScreen').textContent = 'Share Screen';
         }
       }
 
-      $("btnConnect").onclick = async () => {
-        const url = $("url").value;
-        const token = $("token").value;
-        const roomName = $("roomName").value;
-        const displayName = $("displayName").value;
+      $('btnConnect').onclick = async () => {
+        const url = $('url').value;
+        const token = $('token').value;
+        const displayName = $('displayName').value;
 
-        if (!url) return logMsg("Please enter URL", "warn");
-        if (!roomName) return logMsg("Please enter Room Name", "warn");
-        if (!displayName) return logMsg("Please enter Display Name", "warn");
+        if (!url) return logMsg('Please enter URL', 'warn');
+        if (!displayName) return logMsg('Please enter Display Name', 'warn');
 
         try {
-          logMsg("Connecting...");
-          await room.connect(url, token, { displayName, roomName });
+          logMsg('Connecting...');
+          await room.connect(url, token);
+          if (displayName) {
+            await room.localParticipant.setName(displayName);
+          }
           logMsg(`Connected to room: ${room.name}`);
-          $("btnConnect").disabled = true;
-          $("btnDisconnect").disabled = false;
-          $("btnCamera").disabled = false;
-          $("btnMic").disabled = false;
-          $("btnScreen").disabled = false;
+          $('btnConnect').disabled = true;
+          $('btnDisconnect').disabled = false;
+          $('btnCamera').disabled = false;
+          $('btnMic').disabled = false;
+          $('btnScreen').disabled = false;
         } catch (err) {
-          logMsg(`Connection failed: ${err.message}`, "error");
+          logMsg(`Connection failed: ${err.message}`, 'error');
         }
       };
 
-      $("btnDisconnect").onclick = async () => {
+      $('btnDisconnect').onclick = async () => {
         await room.disconnect();
       };
 
-      $("btnCamera").onclick = async () => {
-        const btn = $("btnCamera");
+      $('btnCamera').onclick = async () => {
+        const btn = $('btnCamera');
         const targetState = !cameraEnabled;
         btn.disabled = true;
 
         try {
           await room.localParticipant.setCameraEnabled(targetState);
           cameraEnabled = targetState;
-          btn.textContent = cameraEnabled ? "Disable Camera" : "Enable Camera";
+          btn.textContent = cameraEnabled ? 'Disable Camera' : 'Enable Camera';
         } catch (err) {
-          logMsg(`Camera error: ${err.message}`, "error");
+          logMsg(`Camera error: ${err.message}`, 'error');
         } finally {
           btn.disabled = false;
         }
       };
 
-      $("btnMic").onclick = async () => {
-        const btn = $("btnMic");
+      $('btnMic').onclick = async () => {
+        const btn = $('btnMic');
         const targetState = !micEnabled;
         btn.disabled = true;
 
         try {
           await room.localParticipant.setMicrophoneEnabled(targetState);
           micEnabled = targetState;
-          btn.textContent = micEnabled ? "Disable Mic" : "Enable Mic";
-          logMsg(micEnabled ? "Mic enabled" : "Mic disabled");
+          btn.textContent = micEnabled ? 'Disable Mic' : 'Enable Mic';
+          logMsg(micEnabled ? 'Mic enabled' : 'Mic disabled');
         } catch (err) {
-          logMsg(`Mic error: ${err.message}`, "error");
+          logMsg(`Mic error: ${err.message}`, 'error');
         } finally {
           btn.disabled = false;
         }
       };
 
-      $("btnScreen").onclick = async () => {
-        const btn = $("btnScreen");
+      $('btnScreen').onclick = async () => {
+        const btn = $('btnScreen');
         const targetState = !screenEnabled;
         btn.disabled = true;
 
         try {
           await room.localParticipant.setScreenShareEnabled(targetState);
           screenEnabled = targetState;
-          btn.textContent = screenEnabled ? "Stop Sharing" : "Share Screen";
+          btn.textContent = screenEnabled ? 'Stop Sharing' : 'Share Screen';
         } catch (err) {
-          logMsg(`Screen share error: ${err.message}`, "error");
+          logMsg(`Screen share error: ${err.message}`, 'error');
         } finally {
           btn.disabled = false;
         }
       };
 
       room.on(RoomEvent.Connected, () => {
-        logMsg("Room connected");
+        logMsg('Room connected');
 
         if (room.localParticipant) {
           room.localParticipant.off(ParticipantEvent.TrackPublished, handleLocalTrackPublished);
@@ -341,24 +346,24 @@
       });
 
       room.on(RoomEvent.Disconnected, (reason) => {
-        logMsg(`Disconnected: ${reason ?? "unknown"}`, "warn");
-        $("btnConnect").disabled = false;
-        $("btnDisconnect").disabled = true;
-        $("btnCamera").disabled = true;
-        $("btnMic").disabled = true;
-        $("btnScreen").disabled = true;
-        $("videoGrid").innerHTML = "";
+        logMsg(`Disconnected: ${reason ?? 'unknown'}`, 'warn');
+        $('btnConnect').disabled = false;
+        $('btnDisconnect').disabled = true;
+        $('btnCamera').disabled = true;
+        $('btnMic').disabled = true;
+        $('btnScreen').disabled = true;
+        $('videoGrid').innerHTML = '';
 
         cameraEnabled = false;
         micEnabled = false;
         screenEnabled = false;
-        $("btnCamera").textContent = "Enable Camera";
-        $("btnMic").textContent = "Enable Mic";
-        $("btnScreen").textContent = "Share Screen";
+        $('btnCamera').textContent = 'Enable Camera';
+        $('btnMic').textContent = 'Enable Mic';
+        $('btnScreen').textContent = 'Share Screen';
       });
 
-      room.on(RoomEvent.Reconnecting, () => logMsg("Reconnecting...", "warn"));
-      room.on(RoomEvent.Reconnected, () => logMsg("Reconnected!"));
+      room.on(RoomEvent.Reconnecting, () => logMsg('Reconnecting...', 'warn'));
+      room.on(RoomEvent.Reconnected, () => logMsg('Reconnected!'));
 
       room.on(RoomEvent.ParticipantJoined, (p) => {
         logMsg(`Participant joined: ${p.identity}`);
@@ -366,32 +371,39 @@
 
       room.on(RoomEvent.ParticipantLeft, (p) => {
         logMsg(`Participant left: ${p.identity}`);
-        removeVideoTile(p.sid);
+        for (const pub of p.getTrackPublications()) {
+          if (pub.kind === 'video') removeVideoTile(pub.trackSid);
+        }
+      });
+
+      room.on(RoomEvent.ParticipantNameChanged, (name, p) => {
+        logMsg(`Participant ${p.identity} changed name to: ${name}`);
       });
 
       room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-        logMsg(`Track subscribed: ${track.kind} from ${participant.identity}`);
-        if (track.kind === "video") {
-          const el = addVideoTile(participant.sid, participant.identity ?? participant.sid);
+        logMsg(`Track subscribed: ${track.kind} (${pub.source}) from ${participant.identity}`);
+        if (track.kind === 'video') {
+          const label = `${participant.identity ?? participant.sid} (${pub.source})`;
+          const el = addVideoTile(pub.trackSid, label);
           track.attach(el);
-        } else if (track.kind === "audio") {
+        } else if (track.kind === 'audio') {
           const el = track.attach();
           el.play().catch(() => {});
         }
       });
 
       room.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
-        logMsg(`Track unsubscribed: ${track.kind} from ${participant.identity}`);
+        logMsg(`Track unsubscribed: ${track.kind} (${pub.source}) from ${participant.identity}`);
         track.detach();
-        if (track.kind === "video") {
-          removeVideoTile(participant.sid);
+        if (track.kind === 'video') {
+          removeVideoTile(pub.trackSid);
         }
       });
 
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const active = speakers.filter((s) => s.active).map((s) => s.participantSid);
         if (active.length > 0) {
-          logMsg(`Active speakers: ${active.join(", ")}`);
+          logMsg(`Active speakers: ${active.join(', ')}`);
         }
       });
     </script>
