@@ -1,5 +1,10 @@
 import { TypedEventEmitter } from '../utils/events';
-import type { ParticipantInfo, ParticipantPermission, TrackInfo, TrackSource } from '../protocol/types';
+import type {
+  ParticipantInfo,
+  ParticipantPermission,
+  TrackInfo,
+  TrackSource,
+} from '../protocol/types';
 import {
   TrackKind,
   ConnectionQuality,
@@ -124,13 +129,22 @@ export interface ParticipantEvents {
   [ParticipantEvent.TrackUnsubscribed]: (track: Track, publication: TrackPublication) => void;
   [ParticipantEvent.LocalTrackPublished]: (publication: TrackPublication) => void;
   [ParticipantEvent.LocalTrackUnpublished]: (publication: TrackPublication) => void;
-  [ParticipantEvent.MetadataChanged]: (metadata: string | undefined, participant: Participant) => void;
+  [ParticipantEvent.MetadataChanged]: (
+    metadata: string | undefined,
+    participant: Participant,
+  ) => void;
   [ParticipantEvent.NameChanged]: (name: string | undefined, participant: Participant) => void;
-  [ParticipantEvent.AttributesChanged]: (changedAttributes: Record<string, string>, participant: Participant) => void;
+  [ParticipantEvent.AttributesChanged]: (
+    changedAttributes: Record<string, string>,
+    participant: Participant,
+  ) => void;
   [ParticipantEvent.IsSpeakingChanged]: (speaking: boolean) => void;
   [ParticipantEvent.ConnectionQualityChanged]: (quality: ConnectionQuality) => void;
   [ParticipantEvent.PermissionsChanged]: (prevPermissions?: ParticipantPermission) => void;
-  [ParticipantEvent.TrackStreamStateChanged]: (publication: TrackPublication, streamState: StreamState) => void;
+  [ParticipantEvent.TrackStreamStateChanged]: (
+    publication: TrackPublication,
+    streamState: StreamState,
+  ) => void;
   [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
   [ParticipantEvent.ChatMessage]: (message: ChatMessage) => void;
 }
@@ -180,10 +194,7 @@ export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
 
   /** Whether the participant is in an active (connected / joined) state. */
   get isActive(): boolean {
-    return (
-      this.state === ParticipantState.Connected ||
-      this.state === ParticipantState.Joined
-    );
+    return this.state === ParticipantState.Connected || this.state === ParticipantState.Joined;
   }
 
   /**

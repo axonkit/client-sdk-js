@@ -89,7 +89,10 @@ export class LocalTrack extends Track {
    * Set a {@link TrackProcessor} on this track. Pass `undefined` to remove
    * the current processor.
    */
-  async setProcessor(processor: TrackProcessor | undefined, showProcessedStreamLocally = true): Promise<void> {
+  async setProcessor(
+    processor: TrackProcessor | undefined,
+    showProcessedStreamLocally = true,
+  ): Promise<void> {
     if (this._processor) {
       await this._processor.destroy();
       this._processor = undefined;
@@ -246,9 +249,7 @@ export class LocalTrack extends Track {
       [kind]: this._constraints ?? true,
     });
 
-    const newTrack = kind === 'audio'
-      ? stream.getAudioTracks()[0]
-      : stream.getVideoTracks()[0];
+    const newTrack = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
 
     if (!newTrack) throw new Error('Failed to get new media track');
 

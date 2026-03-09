@@ -53,8 +53,10 @@ export function supportsAdaptiveStream(): boolean {
 /** Whether the browser is likely to support dynacast (simulcast encoding control). */
 export function supportsDynacast(): boolean {
   if (typeof RTCRtpSender === 'undefined') return false;
-  return typeof RTCRtpSender.prototype.getParameters === 'function'
-    && typeof RTCRtpSender.prototype.setParameters === 'function';
+  return (
+    typeof RTCRtpSender.prototype.getParameters === 'function' &&
+    typeof RTCRtpSender.prototype.setParameters === 'function'
+  );
 }
 
 /** Check for AV1 support via `RTCRtpSender.getCapabilities`. */

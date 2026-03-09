@@ -1,6 +1,11 @@
 import { getLogger } from '../utils/logger';
 import { ConnectionError } from '../protocol/errors';
-import type { JoinRequest, JoinResponse, ReconnectResponse, ConnectRequest } from '../protocol/types';
+import type {
+  JoinRequest,
+  JoinResponse,
+  ReconnectResponse,
+  ConnectRequest,
+} from '../protocol/types';
 
 const log = getLogger('SignalClient');
 

@@ -40,10 +40,7 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
   private closed = false;
   lastSentAt = 0;
 
-  bind(
-    sendDC: mediasoupTypes.DataProducer,
-    recvDC: mediasoupTypes.DataConsumer,
-  ): void {
+  bind(sendDC: mediasoupTypes.DataProducer, recvDC: mediasoupTypes.DataConsumer): void {
     this.sendDC = sendDC;
     this.recvDC = recvDC;
 
@@ -141,9 +138,8 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
 
   private handleMessage(data: ArrayBuffer | string): void {
     try {
-      const bytes = typeof data === 'string'
-        ? new TextEncoder().encode(data)
-        : new Uint8Array(data);
+      const bytes =
+        typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
 
       const msg = decode(bytes);
 

@@ -31,7 +31,11 @@ export class RemoteParticipant extends Participant {
   }
 
   /** @internal */
-  init(transportManager: TransportManager, rpc: RPCClient, streamReceiver?: DataStreamReceiver): void {
+  init(
+    transportManager: TransportManager,
+    rpc: RPCClient,
+    streamReceiver?: DataStreamReceiver,
+  ): void {
     this.transportManager = transportManager;
     this.rpc = rpc;
     this.streamReceiver = streamReceiver;

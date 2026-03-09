@@ -35,15 +35,19 @@ export class ConnectionCheck extends TypedEventEmitter<ConnectionCheckEvents> {
   }
 
   async checkSignalConnectivity(): Promise<CheckInfo> {
-    return this.runCheck('signal-connectivity', 'Check signalling server reachability', async () => {
-      const resp = await fetch(this.url.replace(/^ws/, 'http'), {
-        method: 'HEAD',
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!resp.ok && resp.status !== 405) {
-        throw new Error(`Signal server returned ${resp.status}`);
-      }
-    });
+    return this.runCheck(
+      'signal-connectivity',
+      'Check signalling server reachability',
+      async () => {
+        const resp = await fetch(this.url.replace(/^ws/, 'http'), {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!resp.ok && resp.status !== 405) {
+          throw new Error(`Signal server returned ${resp.status}`);
+        }
+      },
+    );
   }
 
   async checkWebRTC(): Promise<CheckInfo> {

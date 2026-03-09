@@ -208,8 +208,6 @@ export enum RoomEvent {
    */
   ChatMessage = 'chatMessage',
 
-
-
   /**
    * The server has pushed a new refresh token. Applications should persist
    * this token for reconnection.

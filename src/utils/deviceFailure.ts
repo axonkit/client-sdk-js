@@ -41,11 +41,7 @@ export class MediaDeviceFailure {
       return 'NotFound';
     }
 
-    if (
-      name === 'NotReadableError' ||
-      name === 'TrackStartError' ||
-      name === 'AbortError'
-    ) {
+    if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
       return 'DeviceInUse';
     }
 

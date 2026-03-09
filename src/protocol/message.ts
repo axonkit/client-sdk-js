@@ -127,7 +127,9 @@ export function decode(data: Uint8Array | ArrayBuffer): AxonMessage {
   let offset = firstLineEnd + 2; // skip first CRLF
 
   // Check for headers block (starts with AXON/1.0)
-  const remaining = textDecoder.decode(bytes.subarray(offset, Math.min(offset + HEADER_PREFIX.length, bytes.byteLength)));
+  const remaining = textDecoder.decode(
+    bytes.subarray(offset, Math.min(offset + HEADER_PREFIX.length, bytes.byteLength)),
+  );
   if (remaining.startsWith(HEADER_PREFIX)) {
     msg.headers = {};
     // Skip "AXON/1.0\r\n"

@@ -62,9 +62,7 @@ export class RemoteTrackPublication extends TrackPublication {
 
   /** Whether the server has allowed this track subscription. */
   get permissionStatus(): PermissionStatus {
-    return this.allowed
-      ? PermissionStatus.Allowed
-      : PermissionStatus.NotAllowed;
+    return this.allowed ? PermissionStatus.Allowed : PermissionStatus.NotAllowed;
   }
 
   /** The currently requested video quality. */
@@ -88,14 +86,18 @@ export class RemoteTrackPublication extends TrackPublication {
 
     if (enabled) {
       this.consumer.resume();
-      this.rpc.request('subscription.resume', {
-        subscriptionSid: this.consumer.id,
-      }).catch(() => {});
+      this.rpc
+        .request('subscription.resume', {
+          subscriptionSid: this.consumer.id,
+        })
+        .catch(() => {});
     } else {
       this.consumer.pause();
-      this.rpc.request('subscription.pause', {
-        subscriptionSid: this.consumer.id,
-      }).catch(() => {});
+      this.rpc
+        .request('subscription.pause', {
+          subscriptionSid: this.consumer.id,
+        })
+        .catch(() => {});
     }
   }
 
@@ -112,17 +114,21 @@ export class RemoteTrackPublication extends TrackPublication {
     if (!this.rpc) return;
 
     if (subscribed) {
-      this.rpc.request('subscription.subscribe', {
-        trackSid: this.trackSid,
-      }).catch((e) => {
-        log.warn('Failed to subscribe', e);
-      });
+      this.rpc
+        .request('subscription.subscribe', {
+          trackSid: this.trackSid,
+        })
+        .catch((e) => {
+          log.warn('Failed to subscribe', e);
+        });
     } else {
-      this.rpc.request('subscription.unsubscribe', {
-        trackSid: this.trackSid,
-      }).catch((e) => {
-        log.warn('Failed to unsubscribe', e);
-      });
+      this.rpc
+        .request('subscription.unsubscribe', {
+          trackSid: this.trackSid,
+        })
+        .catch((e) => {
+          log.warn('Failed to unsubscribe', e);
+        });
     }
   }
 
@@ -196,8 +202,12 @@ export class RemoteTrackPublication extends TrackPublication {
         this.info?.layers,
       );
     } else if (this._videoQuality !== undefined) {
-      spatialLayer = this._videoQuality === VideoQuality.LOW ? 0
-        : this._videoQuality === VideoQuality.MEDIUM ? 1 : 2;
+      spatialLayer =
+        this._videoQuality === VideoQuality.LOW
+          ? 0
+          : this._videoQuality === VideoQuality.MEDIUM
+            ? 1
+            : 2;
     } else {
       spatialLayer = 2;
     }
@@ -212,13 +222,15 @@ export class RemoteTrackPublication extends TrackPublication {
       }
     }
 
-    this.rpc.request('subscription.setPreferredLayers', {
-      subscriptionSid: this.consumer.id,
-      spatialLayer,
-      temporalLayer,
-    }).catch((e) => {
-      log.warn('Failed to set preferred layers', e);
-    });
+    this.rpc
+      .request('subscription.setPreferredLayers', {
+        subscriptionSid: this.consumer.id,
+        spatialLayer,
+        temporalLayer,
+      })
+      .catch((e) => {
+        log.warn('Failed to set preferred layers', e);
+      });
   }
 
   /**

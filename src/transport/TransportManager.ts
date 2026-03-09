@@ -35,10 +35,7 @@ export type ProduceDataCallback = (
 ) => void;
 
 export interface TransportEvents {
-  signalReady: (
-    sendDC: mediasoupTypes.DataProducer,
-    recvDC: mediasoupTypes.DataConsumer,
-  ) => void;
+  signalReady: (sendDC: mediasoupTypes.DataProducer, recvDC: mediasoupTypes.DataConsumer) => void;
   connectionFailed: (direction: 'send' | 'recv') => void;
   closed: () => void;
 }
@@ -126,9 +123,12 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     this.sendTransport = this.device.createSendTransport({
       id: joinResponse.sendTransport.sid,
       iceParameters: joinResponse.sendTransport.iceParameters as mediasoupTypes.IceParameters,
-      iceCandidates: joinResponse.sendTransport.iceCandidates as unknown as mediasoupTypes.IceCandidate[],
-      dtlsParameters: joinResponse.sendTransport.dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
-      sctpParameters: joinResponse.sendTransport.sctpParameters as unknown as mediasoupTypes.SctpParameters,
+      iceCandidates: joinResponse.sendTransport
+        .iceCandidates as unknown as mediasoupTypes.IceCandidate[],
+      dtlsParameters: joinResponse.sendTransport
+        .dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
+      sctpParameters: joinResponse.sendTransport
+        .sctpParameters as unknown as mediasoupTypes.SctpParameters,
       iceServers: joinResponse.iceServers,
       additionalSettings,
     });
@@ -138,9 +138,12 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     this.recvTransport = this.device.createRecvTransport({
       id: joinResponse.receiveTransport.sid,
       iceParameters: joinResponse.receiveTransport.iceParameters as mediasoupTypes.IceParameters,
-      iceCandidates: joinResponse.receiveTransport.iceCandidates as unknown as mediasoupTypes.IceCandidate[],
-      dtlsParameters: joinResponse.receiveTransport.dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
-      sctpParameters: joinResponse.receiveTransport.sctpParameters as unknown as mediasoupTypes.SctpParameters,
+      iceCandidates: joinResponse.receiveTransport
+        .iceCandidates as unknown as mediasoupTypes.IceCandidate[],
+      dtlsParameters: joinResponse.receiveTransport
+        .dtlsParameters as unknown as mediasoupTypes.DtlsParameters,
+      sctpParameters: joinResponse.receiveTransport
+        .sctpParameters as unknown as mediasoupTypes.SctpParameters,
       iceServers: joinResponse.iceServers,
       additionalSettings,
     });
@@ -154,14 +157,18 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     if (this.sendTransport) {
       const params = iceParamsMap[this.sendTransport.id];
       if (params) {
-        await this.sendTransport.restartIce({ iceParameters: params as mediasoupTypes.IceParameters });
+        await this.sendTransport.restartIce({
+          iceParameters: params as mediasoupTypes.IceParameters,
+        });
         log.info(`ICE restarted on send transport ${this.sendTransport.id}`);
       }
     }
     if (this.recvTransport) {
       const params = iceParamsMap[this.recvTransport.id];
       if (params) {
-        await this.recvTransport.restartIce({ iceParameters: params as mediasoupTypes.IceParameters });
+        await this.recvTransport.restartIce({
+          iceParameters: params as mediasoupTypes.IceParameters,
+        });
         log.info(`ICE restarted on recv transport ${this.recvTransport.id}`);
       }
     }
@@ -215,26 +222,25 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       errback(new Error('No produce callback registered for this track'));
     });
 
-    this.sendTransport!.on(
-      'producedata',
-      (params, callback, errback) => {
-        if (params.label === this.joinResponse?.signal.send.label) {
-          callback({ id: this.joinResponse!.signal.send.channelSid });
+    this.sendTransport!.on('producedata', (params, callback, errback) => {
+      if (params.label === this.joinResponse?.signal.send.label) {
+        callback({ id: this.joinResponse!.signal.send.channelSid });
+        return;
+      }
+      const clientTrackId = (params.appData as Record<string, unknown>)?.clientTrackId as
+        | string
+        | undefined;
+      if (clientTrackId) {
+        const cb = this.pendingProduceDataCallbacks.get(clientTrackId);
+        if (cb) {
+          this.pendingProduceDataCallbacks.delete(clientTrackId);
+          cb(params as any, callback, errback);
           return;
         }
-        const clientTrackId = (params.appData as Record<string, unknown>)?.clientTrackId as string | undefined;
-        if (clientTrackId) {
-          const cb = this.pendingProduceDataCallbacks.get(clientTrackId);
-          if (cb) {
-            this.pendingProduceDataCallbacks.delete(clientTrackId);
-            cb(params as any, callback, errback);
-            return;
-          }
-        }
-        log.warn('Unhandled producedata event, no matching callback');
-        errback(new Error('No producedata callback registered'));
-      },
-    );
+      }
+      log.warn('Unhandled producedata event, no matching callback');
+      errback(new Error('No producedata callback registered'));
+    });
 
     this.sendTransport!.on('connectionstatechange', (state: string) => {
       log.info(`Send transport connection state: ${state}`);

@@ -56,7 +56,9 @@ export async function createLocalTracks(
     tracks.push(new LocalAudioTrack(at, constraints.audio as MediaTrackConstraints));
   }
   for (const vt of stream.getVideoTracks()) {
-    tracks.push(new LocalVideoTrack(vt, TrackSource.Camera, constraints.video as MediaTrackConstraints));
+    tracks.push(
+      new LocalVideoTrack(vt, TrackSource.Camera, constraints.video as MediaTrackConstraints),
+    );
   }
 
   return tracks;
@@ -99,13 +101,17 @@ export async function createLocalScreenTracks(
   options?: ScreenShareCaptureOptions,
 ): Promise<LocalTrack[]> {
   const constraints: DisplayMediaStreamOptions = {
-    video: options?.video ?? {
-      width: options?.resolution?.width,
-      height: options?.resolution?.height,
-      frameRate: options?.frameRate,
-    } as MediaTrackConstraints,
+    video:
+      options?.video ??
+      ({
+        width: options?.resolution?.width,
+        height: options?.resolution?.height,
+        frameRate: options?.frameRate,
+      } as MediaTrackConstraints),
     audio: options?.audio
-      ? (typeof options.audio === 'boolean' ? true : audioConstraints(options.audio))
+      ? typeof options.audio === 'boolean'
+        ? true
+        : audioConstraints(options.audio)
       : false,
   };
 

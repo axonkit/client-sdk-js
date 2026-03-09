@@ -35,10 +35,7 @@ export class DefaultReconnectPolicy {
     }
     this.retries = context.retryCount;
 
-    const delay = Math.min(
-      this.baseDelay * Math.pow(2, context.retryCount - 1),
-      this.maxDelay,
-    );
+    const delay = Math.min(this.baseDelay * Math.pow(2, context.retryCount - 1), this.maxDelay);
     const jitter = delay * 0.5 * Math.random();
     return delay + jitter;
   }

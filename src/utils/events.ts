@@ -14,10 +14,10 @@ export class TypedEventEmitter<T extends {} = {}> {
   }
 
   once<K extends keyof T>(event: K, listener: T[K]): this {
-    const wrapped = ((...args: any[]) => {
+    const wrapped = (...args: any[]) => {
       this.off(event, wrapped as any);
       (listener as (...a: any[]) => void)(...args);
-    });
+    };
     return this.on(event, wrapped as any);
   }
 
@@ -27,7 +27,10 @@ export class TypedEventEmitter<T extends {} = {}> {
     return this;
   }
 
-  emit<K extends keyof T>(event: K, ...args: T[K] extends (...a: infer P) => any ? P : any[]): boolean {
+  emit<K extends keyof T>(
+    event: K,
+    ...args: T[K] extends (...a: infer P) => any ? P : any[]
+  ): boolean {
     const key = event as string | symbol;
     const set = this.listeners.get(key);
     if (!set || set.size === 0) return false;

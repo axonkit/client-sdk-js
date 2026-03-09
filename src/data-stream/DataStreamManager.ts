@@ -11,10 +11,7 @@ import type {
   TextStreamHandler,
   ByteStreamHandler,
 } from '../types';
-import type {
-  DataTrackPublishRequest,
-  DataTrackPublishResponse,
-} from '../protocol/types';
+import type { DataTrackPublishRequest, DataTrackPublishResponse } from '../protocol/types';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 
@@ -234,24 +231,27 @@ export class DataStreamSender {
     const clientTrackId = generateLogId();
 
     const publishPromise = new Promise<string>((resolve, reject) => {
-      this.transportManager.registerProduceDataCallback(clientTrackId, async (params, callback, errback) => {
-        try {
-          const req: DataTrackPublishRequest = {
-            clientTrackId,
-            transportSid: sendTransport.id,
-            sctpStreamParameters: params.sctpStreamParameters as any,
-            name: STREAM_DATA_LABEL,
-            label: params.label ?? STREAM_DATA_LABEL,
-            protocol: params.protocol ?? '',
-          };
-          const resp = await this.rpc.request<DataTrackPublishResponse>('dataTrack.publish', req);
-          callback({ id: resp.dataTrackSid });
-          resolve(resp.dataTrackSid);
-        } catch (err) {
-          errback(err instanceof Error ? err : new Error(String(err)));
-          reject(err);
-        }
-      });
+      this.transportManager.registerProduceDataCallback(
+        clientTrackId,
+        async (params, callback, errback) => {
+          try {
+            const req: DataTrackPublishRequest = {
+              clientTrackId,
+              transportSid: sendTransport.id,
+              sctpStreamParameters: params.sctpStreamParameters as any,
+              name: STREAM_DATA_LABEL,
+              label: params.label ?? STREAM_DATA_LABEL,
+              protocol: params.protocol ?? '',
+            };
+            const resp = await this.rpc.request<DataTrackPublishResponse>('dataTrack.publish', req);
+            callback({ id: resp.dataTrackSid });
+            resolve(resp.dataTrackSid);
+          } catch (err) {
+            errback(err instanceof Error ? err : new Error(String(err)));
+            reject(err);
+          }
+        },
+      );
     });
 
     const dp = await sendTransport.produceData({
@@ -482,7 +482,9 @@ export class DataStreamReceiver {
     if (isText) {
       let controller!: ReadableStreamDefaultController<string>;
       const stream = new ReadableStream<string>({
-        start(c) { controller = c; },
+        start(c) {
+          controller = c;
+        },
       });
 
       const info: TextStreamInfo = {
@@ -507,7 +509,9 @@ export class DataStreamReceiver {
     } else {
       let controller!: ReadableStreamDefaultController<Uint8Array>;
       const stream = new ReadableStream<Uint8Array>({
-        start(c) { controller = c; },
+        start(c) {
+          controller = c;
+        },
       });
 
       const info: ByteStreamInfo = {

@@ -67,14 +67,16 @@ export class LocalVideoTrack extends LocalTrack {
     ];
   }
 
-  async setDynacastQuality(qualities: { quality: VideoQuality; enabled: boolean }[]): Promise<void> {
+  async setDynacastQuality(
+    qualities: { quality: VideoQuality; enabled: boolean }[],
+  ): Promise<void> {
     if (!this.producer) return;
 
     // Mediasoup producer does not expose getParameters/setParameters directly on Producer type?
     // It does, but we need to check types.
     // Actually, Mediasoup Producer wraps RTCRtpSender, but doesn't expose setParameters easily?
     // Wait, mediasoup-client Producer has `rtpSender` property.
-    
+
     const sender = this.producer.rtpSender;
     if (!sender) return;
 

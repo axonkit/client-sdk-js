@@ -126,7 +126,10 @@ export class RemoteTrack extends Track {
   }
 
   private supportsSynchronizationSources(): boolean {
-    return typeof RTCRtpReceiver !== 'undefined' && 'getSynchronizationSources' in RTCRtpReceiver.prototype;
+    return (
+      typeof RTCRtpReceiver !== 'undefined' &&
+      'getSynchronizationSources' in RTCRtpReceiver.prototype
+    );
   }
 
   private async monitorReceiver(): Promise<void> {

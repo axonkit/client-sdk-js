@@ -89,7 +89,9 @@ export class StatsCollector {
           direction: 'send',
           stats: rtcStatsToArray(stats),
         });
-      } catch { /* transport may be closed */ }
+      } catch {
+        /* transport may be closed */
+      }
     }
     if (this.transportManager.recvTransport) {
       try {
@@ -99,7 +101,9 @@ export class StatsCollector {
           direction: 'recv',
           stats: rtcStatsToArray(stats),
         });
-      } catch { /* transport may be closed */ }
+      } catch {
+        /* transport may be closed */
+      }
     }
     if (transports.length > 0) report.transports = transports;
 
@@ -109,7 +113,9 @@ export class StatsCollector {
       try {
         const stats = await producer.getStats();
         producers.push({ id: producer.id, trackSid, stats: rtcStatsToArray(stats) });
-      } catch { /* producer may be closed */ }
+      } catch {
+        /* producer may be closed */
+      }
     }
     if (producers.length > 0) report.producers = producers;
 
@@ -120,7 +126,9 @@ export class StatsCollector {
         try {
           const stats = await consumer.getStats();
           consumers.push({ id: consumer.id, participantSid: pSid, stats: rtcStatsToArray(stats) });
-        } catch { /* consumer may be closed */ }
+        } catch {
+          /* consumer may be closed */
+        }
       }
     }
     if (consumers.length > 0) report.consumers = consumers;

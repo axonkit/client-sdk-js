@@ -27,10 +27,7 @@ export class RemoteVideoTrack extends RemoteTrack {
   private debounceTimer?: ReturnType<typeof setTimeout>;
   private pipElement?: HTMLVideoElement;
 
-  constructor(
-    source: TrackSource = TrackSource.Camera,
-    mediaStreamTrack: MediaStreamTrack,
-  ) {
+  constructor(source: TrackSource = TrackSource.Camera, mediaStreamTrack: MediaStreamTrack) {
     super(TrackKind.Video, source, mediaStreamTrack);
   }
 
@@ -69,9 +66,13 @@ export class RemoteVideoTrack extends RemoteTrack {
     try {
       const pipWindow = await el.requestPictureInPicture();
       this.pipElement = el;
-      el.addEventListener('leavepictureinpicture', () => {
-        this.pipElement = undefined;
-      }, { once: true });
+      el.addEventListener(
+        'leavepictureinpicture',
+        () => {
+          this.pipElement = undefined;
+        },
+        { once: true },
+      );
       return pipWindow;
     } catch (e) {
       log.warn('Failed to enter PiP', e);
@@ -154,13 +155,17 @@ export class RemoteVideoTrack extends RemoteTrack {
     if (!this.rpc || !this.subscriptionSid) return;
     const anyVisible = this.elementInfos.some((i) => i.visible) || this.pipElement !== undefined;
     if (anyVisible) {
-      this.rpc.request('subscription.resume', { subscriptionSid: this.subscriptionSid }).catch((e) => {
-        log.warn('Failed to resume subscription', e);
-      });
+      this.rpc
+        .request('subscription.resume', { subscriptionSid: this.subscriptionSid })
+        .catch((e) => {
+          log.warn('Failed to resume subscription', e);
+        });
     } else {
-      this.rpc.request('subscription.pause', { subscriptionSid: this.subscriptionSid }).catch((e) => {
-        log.warn('Failed to pause subscription', e);
-      });
+      this.rpc
+        .request('subscription.pause', { subscriptionSid: this.subscriptionSid })
+        .catch((e) => {
+          log.warn('Failed to pause subscription', e);
+        });
     }
   }
 
@@ -168,15 +173,19 @@ export class RemoteVideoTrack extends RemoteTrack {
     if (!this.rpc || !this.subscriptionSid) return;
     if (document.hidden) {
       if (this.pipElement) return;
-      this.rpc.request('subscription.pause', { subscriptionSid: this.subscriptionSid }).catch((e) => {
-        log.warn('Failed to pause subscription on visibility change', e);
-      });
+      this.rpc
+        .request('subscription.pause', { subscriptionSid: this.subscriptionSid })
+        .catch((e) => {
+          log.warn('Failed to pause subscription on visibility change', e);
+        });
     } else {
       const anyVisible = this.elementInfos.some((i) => i.visible);
       if (anyVisible) {
-        this.rpc.request('subscription.resume', { subscriptionSid: this.subscriptionSid }).catch((e) => {
-          log.warn('Failed to resume subscription on visibility change', e);
-        });
+        this.rpc
+          .request('subscription.resume', { subscriptionSid: this.subscriptionSid })
+          .catch((e) => {
+            log.warn('Failed to resume subscription on visibility change', e);
+          });
       }
     }
   }

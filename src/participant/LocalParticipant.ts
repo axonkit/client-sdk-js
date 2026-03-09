@@ -4,7 +4,12 @@ import { LocalTrackPublication } from './LocalTrackPublication';
 import { LocalTrack } from '../track/LocalTrack';
 import { LocalAudioTrack } from '../track/LocalAudioTrack';
 import { LocalVideoTrack } from '../track/LocalVideoTrack';
-import { createLocalTracks, createLocalAudioTrack, createLocalVideoTrack, createLocalScreenTracks } from '../track/create';
+import {
+  createLocalTracks,
+  createLocalAudioTrack,
+  createLocalVideoTrack,
+  createLocalScreenTracks,
+} from '../track/create';
 import { RPCClient } from '../signal/RPCClient';
 import { TransportManager } from '../transport/TransportManager';
 import { TrackKind, TrackSource } from '../protocol/types';
@@ -17,12 +22,31 @@ import type {
   JoinGroupResponse,
   ParticipantInfo,
 } from '../protocol/types';
-import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions, ScreenShareCaptureOptions, PublishCodecOptions } from '../track/options';
+import type {
+  TrackPublishOptions,
+  DataPublishOptions,
+  AudioCaptureOptions,
+  VideoCaptureOptions,
+  ScreenShareCaptureOptions,
+  PublishCodecOptions,
+} from '../track/options';
 import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
-import type { ChatMessage, SendTextOptions, StreamTextOptions, StreamBytesOptions, SendFileOptions, PerformRpcParams, RpcInvocationData } from '../types';
-import { DataStreamSender, TextStreamWriter, ByteStreamWriter } from '../data-stream/DataStreamManager';
+import type {
+  ChatMessage,
+  SendTextOptions,
+  StreamTextOptions,
+  StreamBytesOptions,
+  SendFileOptions,
+  PerformRpcParams,
+  RpcInvocationData,
+} from '../types';
+import {
+  DataStreamSender,
+  TextStreamWriter,
+  ByteStreamWriter,
+} from '../data-stream/DataStreamManager';
 import { RpcError, byteLength, MAX_RPC_PAYLOAD_BYTES } from '../rpc';
 
 const log = getLogger('LocalParticipant');
@@ -46,11 +70,14 @@ export class LocalParticipant extends Participant {
   /** @internal RPC handlers registered by the user for P2P RPC. */
   rpcHandlers = new Map<string, (data: RpcInvocationData) => Promise<string>>();
   /** @internal Pending RPC responses waiting for a reply. */
-  pendingRpcResponses = new Map<string, {
-    resolve: (payload: string) => void;
-    reject: (error: RpcError) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
+  pendingRpcResponses = new Map<
+    string,
+    {
+      resolve: (payload: string) => void;
+      reject: (error: RpcError) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   /** @internal */
   init(rpc: RPCClient, transportManager: TransportManager): void {
@@ -109,7 +136,10 @@ export class LocalParticipant extends Participant {
     if (enabled) {
       try {
         const track = await createLocalAudioTrack(captureOptions);
-        return await this.publishTrack(track, { ...publishOptions, source: TrackSource.Microphone });
+        return await this.publishTrack(track, {
+          ...publishOptions,
+          source: TrackSource.Microphone,
+        });
       } catch (e) {
         this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
         throw e;
@@ -214,11 +244,13 @@ export class LocalParticipant extends Participant {
     if (isVideo && localTrack instanceof LocalVideoTrack) {
       if (options?.scalabilityMode) {
         const enc = options.videoEncoding;
-        encodings = [{
-          scalabilityMode: options.scalabilityMode,
-          maxBitrate: enc?.maxBitrate,
-          maxFramerate: enc?.maxFramerate,
-        }];
+        encodings = [
+          {
+            scalabilityMode: options.scalabilityMode,
+            maxBitrate: enc?.maxBitrate,
+            maxFramerate: enc?.maxFramerate,
+          },
+        ];
       } else {
         if (options?.simulcast !== false) {
           localTrack.setSimulcast(true);
@@ -243,33 +275,36 @@ export class LocalParticipant extends Participant {
     const clientTrackId = generateLogId();
 
     const producePromise = new Promise<string>((resolve, reject) => {
-      this.transportManager.registerProduceCallback(clientTrackId, async (params, callback, errback) => {
-        try {
-          const req: TrackPublishRequest = {
-            clientTrackId,
-            name: options?.name ?? localTrack.mediaStreamTrack.label,
-            kind: localTrack.kind,
-            rtpParameters: params.rtpParameters,
-            source: localTrack.source,
-            muted: localTrack.isMuted,
-          };
+      this.transportManager.registerProduceCallback(
+        clientTrackId,
+        async (params, callback, errback) => {
+          try {
+            const req: TrackPublishRequest = {
+              clientTrackId,
+              name: options?.name ?? localTrack.mediaStreamTrack.label,
+              kind: localTrack.kind,
+              rtpParameters: params.rtpParameters,
+              source: localTrack.source,
+              muted: localTrack.isMuted,
+            };
 
-          if (isVideo && localTrack instanceof LocalVideoTrack) {
-            const dim = localTrack.dimensions;
-            if (dim) {
-              req.width = dim.width;
-              req.height = dim.height;
+            if (isVideo && localTrack instanceof LocalVideoTrack) {
+              const dim = localTrack.dimensions;
+              if (dim) {
+                req.width = dim.width;
+                req.height = dim.height;
+              }
             }
-          }
 
-          const resp = await this.rpc.request<TrackPublishResponse>('track.publish', req);
-          callback({ id: resp.trackSid });
-          resolve(resp.trackSid);
-        } catch (err) {
-          errback(err instanceof Error ? err : new Error(String(err)));
-          reject(err);
-        }
-      });
+            const resp = await this.rpc.request<TrackPublishResponse>('track.publish', req);
+            callback({ id: resp.trackSid });
+            resolve(resp.trackSid);
+          } catch (err) {
+            errback(err instanceof Error ? err : new Error(String(err)));
+            reject(err);
+          }
+        },
+      );
     });
 
     const producer = await sendTransport.produce({
@@ -360,9 +395,7 @@ export class LocalParticipant extends Participant {
     if (!trackSid) return undefined;
 
     const producer = this.producers.get(trackSid);
-    const publication = this.trackPublications.get(trackSid) as
-      | LocalTrackPublication
-      | undefined;
+    const publication = this.trackPublications.get(trackSid) as LocalTrackPublication | undefined;
 
     try {
       await this.rpc.request('track.unpublish', { trackSid });
@@ -488,10 +521,12 @@ export class LocalParticipant extends Participant {
   }
 
   private updateTrackSubscriptionPermissions(): void {
-    this.rpc.request('subscription.updatePermissions', {
-      allParticipantsAllowed: this.allParticipantsAllowedToSubscribe,
-      trackPermissions: this.participantTrackPermissions,
-    }).catch(() => {});
+    this.rpc
+      .request('subscription.updatePermissions', {
+        allParticipantsAllowed: this.allParticipantsAllowedToSubscribe,
+        trackPermissions: this.participantTrackPermissions,
+      })
+      .catch(() => {});
   }
 
   // --- Chat Messages ---
@@ -613,7 +648,13 @@ export class LocalParticipant extends Participant {
     clearTimeout(pending.timer);
 
     if (body.error) {
-      pending.reject(new RpcError(body.error.code ?? 1500, body.error.message ?? 'Application error', body.error.data));
+      pending.reject(
+        new RpcError(
+          body.error.code ?? 1500,
+          body.error.message ?? 'Application error',
+          body.error.data,
+        ),
+      );
     } else {
       pending.resolve(body.payload ?? '');
     }
@@ -644,9 +685,13 @@ export class LocalParticipant extends Participant {
         payload: result,
       });
     } catch (err) {
-      const rpcErr = err instanceof RpcError
-        ? err
-        : new RpcError(RpcError.ErrorCode.APPLICATION_ERROR, err instanceof Error ? err.message : String(err));
+      const rpcErr =
+        err instanceof RpcError
+          ? err
+          : new RpcError(
+              RpcError.ErrorCode.APPLICATION_ERROR,
+              err instanceof Error ? err.message : String(err),
+            );
       this.rpc.notify('rpc.response', {
         requestId: body.requestId,
         callerIdentity: body.callerIdentity,
@@ -729,10 +774,7 @@ export class LocalParticipant extends Participant {
    * @param options - Override publish options for all tracks.
    * @param restartTracks - Whether to restart ended tracks before republishing.
    */
-  async republishAllTracks(
-    options?: TrackPublishOptions,
-    restartTracks = true,
-  ): Promise<void> {
+  async republishAllTracks(options?: TrackPublishOptions, restartTracks = true): Promise<void> {
     const publications = [...this.trackPublications.values()];
     this.clearPublications();
 
