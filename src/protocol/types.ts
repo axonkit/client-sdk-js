@@ -193,6 +193,8 @@ export interface ParticipantInfo {
   joinedAt?: number;
   permission?: ParticipantPermission;
   groupId?: string;
+  /** @internal Node that hosts this participant (used for cross-node sync). */
+  nodeId?: string;
 }
 
 export interface TrackInfo {
