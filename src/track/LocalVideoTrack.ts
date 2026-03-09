@@ -93,17 +93,6 @@ export class LocalVideoTrack extends LocalTrack {
     log.debug(`Dynacast quality updated for ${this.sid ?? 'unknown'}`);
   }
 
-  async setSubscriptionStatus(hasSubscribers: boolean): Promise<void> {
-    if (!this.producer) return;
-
-    if (hasSubscribers) {
-      this.producer.resume();
-    } else {
-      this.producer.pause();
-    }
-    log.debug(`Subscription status: hasSubscribers=${hasSubscribers} for ${this.sid ?? 'unknown'}`);
-  }
-
   async setDeviceId(deviceId: string): Promise<void> {
     await this.restart({ ...(this.constraints ?? {}), deviceId: { exact: deviceId } });
   }

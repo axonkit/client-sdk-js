@@ -190,6 +190,19 @@ export class LocalTrack extends Track {
   }
 
   /**
+   * Pauses or resumes the producer based on whether there are active
+   * subscribers (dynacast). Works for both audio and video tracks.
+   */
+  async setSubscriptionStatus(hasSubscribers: boolean): Promise<void> {
+    if (!this._producer) return;
+    if (hasSubscribers) {
+      this._producer.resume();
+    } else {
+      this._producer.pause();
+    }
+  }
+
+  /**
    * Get the device ID currently used by this track.
    */
   async getDeviceId(): Promise<string | undefined> {

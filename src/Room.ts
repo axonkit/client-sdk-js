@@ -1134,25 +1134,39 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     }
   }
 
+  /**
+   * Video track only: the server reports per-layer subscriber state.
+   * When all qualities are disabled the track has no subscribers and should be paused.
+   */
   private handleSubscribedQualityChanged(body: TrackSubscribedQualityChangedNotification): void {
     if (!this._options.dynacast) return;
 
     const pub = this._localParticipant.getTrackPublicationBySid(body.trackSid);
     if (!pub?.track || !(pub.track instanceof LocalVideoTrack)) return;
 
-    (pub.track as LocalVideoTrack).setDynacastQuality(body.subscribedQualities).catch((err) => {
-      log.warn('Failed to set dynacast quality', err);
+    const videoTrack = pub.track as LocalVideoTrack;
+    const hasSubscribers = body.subscribedQualities.some((q) => q.enabled);
+
+    videoTrack.setSubscriptionStatus(hasSubscribers).catch((err) => {
+      log.warn('Failed to update video subscription status', err);
     });
+
+    if (hasSubscribers) {
+      videoTrack.setDynacastQuality(body.subscribedQualities).catch((err) => {
+        log.warn('Failed to set dynacast quality', err);
+      });
+    }
   }
 
+  /** Audio track only: simple has/no subscribers signal. */
   private handleSubscriptionStatusChanged(body: TrackSubscriptionStatusChangedNotification): void {
     if (!this._options.dynacast) return;
 
     const pub = this._localParticipant.getTrackPublicationBySid(body.trackSid);
-    if (!pub?.track || !(pub.track instanceof LocalVideoTrack)) return;
+    if (!pub?.track || !(pub.track instanceof LocalTrack)) return;
 
-    (pub.track as LocalVideoTrack).setSubscriptionStatus(body.hasSubscribers).catch((err) => {
-      log.warn('Failed to set subscription status', err);
+    (pub.track as LocalTrack).setSubscriptionStatus(body.hasSubscribers).catch((err) => {
+      log.warn('Failed to update audio subscription status', err);
     });
   }
 
