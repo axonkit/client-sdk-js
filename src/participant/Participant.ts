@@ -280,6 +280,10 @@ export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
       this.setPermissions(info.permission);
     }
 
+    if (info.groupId !== undefined) {
+      this.groupId = info.groupId || undefined;
+    }
+
     if (info.attributes) {
       const changed: Record<string, string> = {};
       for (const [k, v] of Object.entries(info.attributes)) {

@@ -192,6 +192,7 @@ export interface ParticipantInfo {
   kind?: ParticipantKind;
   joinedAt?: number;
   permission?: ParticipantPermission;
+  groupId?: string;
 }
 
 export interface TrackInfo {
@@ -562,6 +563,10 @@ export interface ListGroupsResponse {
 
 export interface JoinGroupRequest {
   groupId: string;
+}
+
+export interface JoinGroupResponse {
+  otherParticipants: ParticipantInfo[];
 }
 
 export interface GroupCreatedNotification {

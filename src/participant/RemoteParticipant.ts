@@ -74,6 +74,7 @@ export class RemoteParticipant extends Participant {
     const p = new RemoteParticipant(info.sid, info.identity, info.name, info.metadata);
     p.state = info.state;
     if (info.attributes) p.attributes = { ...info.attributes };
+    if (info.groupId) p.groupId = info.groupId;
 
     if (info.tracks) {
       for (const trackInfo of info.tracks) {

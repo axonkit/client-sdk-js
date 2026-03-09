@@ -191,6 +191,39 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     return this._groups;
   }
 
+  /**
+   * Get all participants currently in the specified group.
+   * Includes the local participant if they are in the group.
+   */
+  getGroupParticipants(groupId: string): Participant[] {
+    const result: Participant[] = [];
+    if (this._localParticipant?.groupId === groupId) {
+      result.push(this._localParticipant);
+    }
+    for (const [, rp] of this._remoteParticipants) {
+      if (rp.groupId === groupId) {
+        result.push(rp);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Get all participants currently in the main room (not in any group).
+   */
+  getMainRoomParticipants(): Participant[] {
+    const result: Participant[] = [];
+    if (this._localParticipant && !this._localParticipant.groupId) {
+      result.push(this._localParticipant);
+    }
+    for (const [, rp] of this._remoteParticipants) {
+      if (!rp.groupId) {
+        result.push(rp);
+      }
+    }
+    return result;
+  }
+
   /** Whether audio can be played back automatically (i.e. no autoplay restriction). */
   get canPlaybackAudio(): boolean {
     return this._canPlaybackAudio;

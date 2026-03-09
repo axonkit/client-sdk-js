@@ -14,6 +14,8 @@ import type {
   DataTrackPublishRequest,
   DataTrackPublishResponse,
   ParticipantTrackPermission,
+  JoinGroupResponse,
+  ParticipantInfo,
 } from '../protocol/types';
 import type { TrackPublishOptions, DataPublishOptions, AudioCaptureOptions, VideoCaptureOptions, ScreenShareCaptureOptions, PublishCodecOptions } from '../track/options';
 import { ParticipantEvent } from '../events';
@@ -448,10 +450,12 @@ export class LocalParticipant extends Participant {
    * Join a group (breakout room). The server will rewire subscriptions
    * so that only participants in the same group exchange media.
    * Permissions may change to the group-level permissions.
+   * @returns The list of other participants already in the group.
    */
-  async joinGroup(groupId: string): Promise<void> {
-    await this.rpc.request('group.join', { groupId });
+  async joinGroup(groupId: string): Promise<ParticipantInfo[]> {
+    const resp = await this.rpc.request<JoinGroupResponse>('group.join', { groupId });
     this.groupId = groupId;
+    return resp.otherParticipants ?? [];
   }
 
   /**
