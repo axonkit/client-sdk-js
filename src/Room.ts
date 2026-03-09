@@ -651,7 +651,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         }
       }
 
-      await this.republishAllTracks();
+      await this._localParticipant.republishAllTracks();
 
       this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
       this.startStatsCollector(jr.statsInterval);
@@ -665,11 +665,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
       this.attemptReconnect();
     }
-  }
-
-  private async republishAllTracks(): Promise<void> {
-    if (!this._localParticipant) return;
-    await this._localParticipant.republishAllTracks();
   }
 
   private buildSyncState(): SyncState {

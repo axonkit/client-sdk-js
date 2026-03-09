@@ -359,7 +359,6 @@ export class LocalParticipant extends Participant {
     producer.on('transportclose', () => {
       log.info(`Transport closed for track ${trackSid}`);
       this.producers.delete(trackSid);
-      this.trackPublications.delete(trackSid);
     });
 
     this.emit(ParticipantEvent.TrackPublished, publication);
@@ -771,8 +770,10 @@ export class LocalParticipant extends Participant {
   /**
    * Re-publish all currently published tracks. Useful after a full reconnect
    * or when changing publish options globally.
-   * @param options - Override publish options for all tracks.
-   * @param restartTracks - Whether to restart ended tracks before republishing.
+   *
+   * The transportclose handler only clears `producers`, not
+   * `trackPublications`, so the publications are still available here even
+   * after the old transport has been closed.
    */
   async republishAllTracks(options?: TrackPublishOptions, restartTracks = true): Promise<void> {
     const publications = [...this.trackPublications.values()];
