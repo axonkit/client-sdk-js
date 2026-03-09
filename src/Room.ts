@@ -214,6 +214,13 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     return this._remoteParticipants;
   }
 
+  /**
+   * Returns WebRTC stats for the underlying send and receive transports.
+   */
+  async getTransportStats(): Promise<{ send?: RTCStatsReport; recv?: RTCStatsReport }> {
+    return this.transportManager.getStats();
+  }
+
   /** All active groups (breakout rooms) in this room. */
   get groups(): ReadonlyMap<string, GroupInfo> {
     return this._groups;

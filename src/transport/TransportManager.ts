@@ -174,6 +174,20 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     }
   }
 
+  /**
+   * Returns WebRTC stats for the send and/or receive transports.
+   */
+  async getStats(): Promise<{
+    send?: RTCStatsReport;
+    recv?: RTCStatsReport;
+  }> {
+    const [send, recv] = await Promise.all([
+      this.sendTransport?.getStats(),
+      this.recvTransport?.getStats(),
+    ]);
+    return { send: send ?? undefined, recv: recv ?? undefined };
+  }
+
   close(): void {
     if (!this.sendTransport && !this.recvTransport) return;
 

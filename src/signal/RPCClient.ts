@@ -70,7 +70,7 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
       body: body ? jsonToBody(body) : undefined,
     };
 
-    log.debug(`REQ ${method} logId=${logId}`);
+    if (method !== 'ping') log.debug(`REQ ${method} logId=${logId}`);
 
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -180,7 +180,7 @@ export class RPCClient extends TypedEventEmitter<RPCEvents> {
     }
 
     const body = bodyToJSON(msg);
-    log.debug(`RES ${pending.method} logId=${logId} status=${msg.status}`);
+    if (pending.method !== 'ping') log.debug(`RES ${pending.method} logId=${logId} status=${msg.status}`);
     pending.resolve(body);
   }
 

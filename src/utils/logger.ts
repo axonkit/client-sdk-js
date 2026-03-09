@@ -58,7 +58,9 @@ export function setLogExtension(handler: LogExtension | undefined): void {
 export function getLogger(tag: string): LoggerInterface {
   const prefix = `[AxonKit:${tag}]`;
 
-  function wrap(level: LogLevel, consoleFn: (...args: any[]) => void) {
+  const noop = () => {};
+
+  function makeMethod(level: LogLevel, consoleFn: (...args: any[]) => void) {
     return (msg: string, ...args: any[]) => {
       if (globalLevel > level) return;
 
@@ -81,11 +83,31 @@ export function getLogger(tag: string): LoggerInterface {
     };
   }
 
-  return {
-    trace: wrap(LogLevel.TRACE, console.debug),
-    debug: wrap(LogLevel.DEBUG, console.debug),
-    info: wrap(LogLevel.INFO, console.info),
-    warn: wrap(LogLevel.WARN, console.warn),
-    error: wrap(LogLevel.ERROR, console.error),
-  };
+  // Use a Proxy so that each call resolves the method at invocation time.
+  // When no custom logger or extension is set, the proxy returns a bound
+  // console function whose call-site is visible in browser devtools.
+  return new Proxy({} as LoggerInterface, {
+    get(_target, prop: string) {
+      const levelMap: Record<string, [LogLevel, (...args: any[]) => void]> = {
+        trace: [LogLevel.TRACE, console.debug],
+        debug: [LogLevel.DEBUG, console.debug],
+        info: [LogLevel.INFO, console.info],
+        warn: [LogLevel.WARN, console.warn],
+        error: [LogLevel.ERROR, console.error],
+      };
+      const entry = levelMap[prop];
+      if (!entry) return undefined;
+
+      const [level, consoleFn] = entry;
+      if (globalLevel > level) return noop;
+
+      if (customLogger || logExtension) {
+        return makeMethod(level, consoleFn);
+      }
+
+      // Return a bound console call — browser devtools will attribute the
+      // log line to the *caller* of this function, not to logger.ts.
+      return consoleFn.bind(console, prefix);
+    },
+  });
 }

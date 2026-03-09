@@ -62,6 +62,7 @@ export class StatsCollector {
     this.stop();
     if (intervalSec <= 0) return;
 
+    log.info('Stats collector started');
     this.timer = setInterval(() => {
       this.collect().catch((err) => {
         log.warn('Failed to collect stats', err);
@@ -73,6 +74,7 @@ export class StatsCollector {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+      log.info('Stats collector stopped');
     }
   }
 
