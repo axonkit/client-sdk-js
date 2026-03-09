@@ -224,6 +224,35 @@ export enum RoomEvent {
    * args: `(publication: RemoteTrackPublication, streamState: StreamState, participant: RemoteParticipant)`
    */
   TrackStreamStateChanged = 'trackStreamStateChanged',
+
+  /**
+   * A new group (breakout room) has been created.
+   *
+   * args: `(group: GroupInfo)`
+   */
+  GroupCreated = 'groupCreated',
+
+  /**
+   * A group has been deleted. All participants in the group are
+   * returned to the main room.
+   *
+   * args: `(groupId: string)`
+   */
+  GroupDeleted = 'groupDeleted',
+
+  /**
+   * A participant has joined a group.
+   *
+   * args: `(groupId: string, participant: RemoteParticipant | LocalParticipant)`
+   */
+  GroupParticipantJoined = 'groupParticipantJoined',
+
+  /**
+   * A participant has left a group (returned to the main room).
+   *
+   * args: `(groupId: string, participant: RemoteParticipant | LocalParticipant)`
+   */
+  GroupParticipantLeft = 'groupParticipantLeft',
 }
 
 /**

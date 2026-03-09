@@ -145,6 +145,8 @@ export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
   audioLevel = 0;
   attributes: Record<string, string> = {};
   permissions?: ParticipantPermission;
+  /** The group (breakout room) this participant is currently in. `undefined` = main room. */
+  groupId?: string;
   trackPublications = new Map<string, TrackPublication>();
   audioTrackPublications = new Map<string, TrackPublication>();
   videoTrackPublications = new Map<string, TrackPublication>();

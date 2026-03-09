@@ -175,6 +175,7 @@ export interface ParticipantPermission {
   canPublishData: boolean;
   canPublishSources: TrackSource[];
   canUpdateMetadata: boolean;
+  canManageGroups: boolean;
   hidden: boolean;
   recorder: boolean;
   agent: boolean;
@@ -287,6 +288,8 @@ export interface SyncState {
   subscribedDataTrackSids: string[];
   publishedTrackSids: string[];
   dataReceiveStates: DataReceiveState[];
+  /** Timestamp of the last chat message the client received before disconnect. */
+  lastMessageTimestamp?: number;
 }
 
 export interface DataReceiveState {
@@ -304,6 +307,17 @@ export interface ReadyRequest {
 export interface ReadyResponse {
   otherParticipants: ParticipantInfo[];
   room?: RoomInfo;
+  groups?: GroupInfo[];
+  messages?: ChatMessageInfo[];
+}
+
+export interface ChatMessageInfo {
+  id: string;
+  message: string;
+  timestamp: number;
+  editTimestamp?: number;
+  participantSid?: string;
+  participantIdentity?: string;
 }
 
 export interface LeaveRequest {
@@ -516,4 +530,54 @@ export interface RoomUpdatedNotification {
 
 export interface DisconnectNotification {
   reason: DisconnectReason;
+}
+
+// ============================================================
+// Group (Breakout Room) Types
+// ============================================================
+
+export interface GroupInfo {
+  groupId: string;
+  name: string;
+  permissions?: ParticipantPermission;
+  participantCount: number;
+}
+
+export interface CreateGroupRequest {
+  name: string;
+  permissions?: ParticipantPermission;
+}
+
+export interface CreateGroupResponse {
+  group: GroupInfo;
+}
+
+export interface DeleteGroupRequest {
+  groupId: string;
+}
+
+export interface ListGroupsResponse {
+  groups: GroupInfo[];
+}
+
+export interface JoinGroupRequest {
+  groupId: string;
+}
+
+export interface GroupCreatedNotification {
+  group: GroupInfo;
+}
+
+export interface GroupDeletedNotification {
+  groupId: string;
+}
+
+export interface GroupParticipantJoinedNotification {
+  groupId: string;
+  participantSid: string;
+}
+
+export interface GroupParticipantLeftNotification {
+  groupId: string;
+  participantSid: string;
 }

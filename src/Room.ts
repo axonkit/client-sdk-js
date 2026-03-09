@@ -37,6 +37,13 @@ import {
   type DataSubscriptionCreateRequest,
   type DataSubscriptionClosedNotification,
   type ActiveSpeaker,
+  type GroupInfo,
+  type CreateGroupResponse,
+  type ListGroupsResponse,
+  type GroupCreatedNotification,
+  type GroupDeletedNotification,
+  type GroupParticipantJoinedNotification,
+  type GroupParticipantLeftNotification,
   ConnectionQuality,
 } from './protocol/types';
 import type { RoomOptions, ReconnectPolicy } from './track/options';
@@ -101,6 +108,10 @@ export interface RoomEvents {
   [RoomEvent.VideoPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.ChatMessage]: (message: ChatMessage, participant?: Participant) => void;
   [RoomEvent.TrackStreamStateChanged]: (publication: TrackPublication, streamState: StreamState, participant: RemoteParticipant) => void;
+  [RoomEvent.GroupCreated]: (group: GroupInfo) => void;
+  [RoomEvent.GroupDeleted]: (groupId: string) => void;
+  [RoomEvent.GroupParticipantJoined]: (groupId: string, participant: Participant) => void;
+  [RoomEvent.GroupParticipantLeft]: (groupId: string, participant: Participant) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -121,6 +132,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private transportManager!: TransportManager;
   private _localParticipant!: LocalParticipant;
   private _remoteParticipants = new Map<string, RemoteParticipant>();
+  private _groups = new Map<string, GroupInfo>();
 
   private pingInterval?: ReturnType<typeof setInterval>;
   private pingTimeoutTimer?: ReturnType<typeof setTimeout>;
@@ -140,6 +152,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private _activeSpeakers: Participant[] = [];
   private _activeDeviceMap = new Map<MediaDeviceKind, string>();
   private dataStreamReceiver = new DataStreamReceiver();
+  private _lastMessageTimestamp = 0;
 
   constructor(options?: RoomOptions) {
     super();
@@ -171,6 +184,11 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   get remoteParticipants(): Map<string, RemoteParticipant> {
     return this._remoteParticipants;
+  }
+
+  /** All active groups (breakout rooms) in this room. */
+  get groups(): ReadonlyMap<string, GroupInfo> {
+    return this._groups;
   }
 
   /** Whether audio can be played back automatically (i.e. no autoplay restriction). */
@@ -227,6 +245,40 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       if (rp.identity === identity) return rp;
     }
     return undefined;
+  }
+
+  /** Find any participant (local or remote) by SID. */
+  private getParticipantBySid(sid: string): Participant | undefined {
+    if (this._localParticipant?.sid === sid) return this._localParticipant;
+    return this._remoteParticipants.get(sid);
+  }
+
+  // --- Group (Breakout Room) Management ---
+
+  /**
+   * Create a new group (breakout room) within this room.
+   * Requires `canManageGroups` permission.
+   */
+  async createGroup(name: string, permissions?: import('./protocol/types').ParticipantPermission): Promise<GroupInfo> {
+    const resp = await this.rpcClient.request<CreateGroupResponse>('group.create', { name, permissions });
+    return resp.group;
+  }
+
+  /**
+   * Delete a group. All participants in the group are returned to the main room
+   * and their permissions revert to room-level defaults.
+   * Requires `canManageGroups` permission.
+   */
+  async deleteGroup(groupId: string): Promise<void> {
+    await this.rpcClient.request('group.delete', { groupId });
+  }
+
+  /**
+   * List all active groups in this room.
+   */
+  async listGroups(): Promise<GroupInfo[]> {
+    const resp = await this.rpcClient.request<ListGroupsResponse>('group.list', {});
+    return resp.groups;
   }
 
   // --- Device Management ---
@@ -369,6 +421,12 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         }
       }
 
+      if (readyResp.groups) {
+        for (const g of readyResp.groups) {
+          this._groups.set(g.groupId, g);
+        }
+      }
+
       this.setState(RoomState.Connected);
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this.startStatsCollector(joinResponse.statsInterval);
@@ -505,6 +563,21 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         this._name = readyResp.room.name;
       }
 
+      // Restore groups from server.
+      if (readyResp.groups) {
+        this._groups.clear();
+        for (const g of readyResp.groups) {
+          this._groups.set(g.groupId, g);
+        }
+      }
+
+      // Replay chat messages missed during disconnect.
+      if (readyResp.messages) {
+        for (const m of readyResp.messages) {
+          this.handleChatMessage(m);
+        }
+      }
+
       await this.republishAllTracks();
 
       this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
@@ -548,6 +621,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       subscribedDataTrackSids,
       publishedTrackSids,
       dataReceiveStates: [],
+      lastMessageTimestamp: this._lastMessageTimestamp || undefined,
     };
   }
 
@@ -863,6 +937,40 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this.rpcClient.onNotification('rpc.response', (body: any) => {
       this._localParticipant.handleRpcResponse(body);
     });
+
+    this.rpcClient.onNotification('group.created', (body: GroupCreatedNotification) => {
+      this._groups.set(body.group.groupId, body.group);
+      this.emit(RoomEvent.GroupCreated, body.group);
+    });
+
+    this.rpcClient.onNotification('group.deleted', (body: GroupDeletedNotification) => {
+      this._groups.delete(body.groupId);
+      if (this._localParticipant.groupId === body.groupId) {
+        this._localParticipant.groupId = undefined;
+      }
+      for (const [, rp] of this._remoteParticipants) {
+        if (rp.groupId === body.groupId) {
+          rp.groupId = undefined;
+        }
+      }
+      this.emit(RoomEvent.GroupDeleted, body.groupId);
+    });
+
+    this.rpcClient.onNotification('group.participantJoined', (body: GroupParticipantJoinedNotification) => {
+      const participant = this.getParticipantBySid(body.participantSid);
+      if (participant) {
+        participant.groupId = body.groupId;
+        this.emit(RoomEvent.GroupParticipantJoined, body.groupId, participant);
+      }
+    });
+
+    this.rpcClient.onNotification('group.participantLeft', (body: GroupParticipantLeftNotification) => {
+      const participant = this.getParticipantBySid(body.participantSid);
+      if (participant) {
+        participant.groupId = undefined;
+        this.emit(RoomEvent.GroupParticipantLeft, body.groupId, participant);
+      }
+    });
   }
 
   // --- Notification Handlers ---
@@ -990,6 +1098,12 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       editTimestamp: body.editTimestamp,
       attachedFiles: body.attachedFiles,
     };
+
+    const ts = msg.editTimestamp ?? msg.timestamp;
+    if (ts > this._lastMessageTimestamp) {
+      this._lastMessageTimestamp = ts;
+    }
+
     const participant = body.participantSid
       ? this._remoteParticipants.get(body.participantSid)
       : undefined;
@@ -1110,6 +1224,13 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     });
     this._localParticipant.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, this._localParticipant);
+    });
+    this._localParticipant.on(ParticipantEvent.ChatMessage, (msg: ChatMessage) => {
+      const ts = msg.editTimestamp ?? msg.timestamp;
+      if (ts > this._lastMessageTimestamp) {
+        this._lastMessageTimestamp = ts;
+      }
+      this.emit(RoomEvent.ChatMessage, msg, this._localParticipant);
     });
   }
 

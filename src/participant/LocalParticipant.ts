@@ -442,6 +442,27 @@ export class LocalParticipant extends Participant {
     this.attributes = { ...this.attributes, ...attributes };
   }
 
+  // --- Group (Breakout Room) ---
+
+  /**
+   * Join a group (breakout room). The server will rewire subscriptions
+   * so that only participants in the same group exchange media.
+   * Permissions may change to the group-level permissions.
+   */
+  async joinGroup(groupId: string): Promise<void> {
+    await this.rpc.request('group.join', { groupId });
+    this.groupId = groupId;
+  }
+
+  /**
+   * Leave the current group and return to the main room.
+   * Permissions revert to room-level defaults.
+   */
+  async leaveGroup(): Promise<void> {
+    await this.rpc.request('group.leave', {});
+    this.groupId = undefined;
+  }
+
   /**
    * Control who can subscribe to LocalParticipant's published tracks.
    *

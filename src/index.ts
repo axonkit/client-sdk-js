@@ -99,6 +99,7 @@ export type {
   TrackInfo,
   ActiveSpeaker,
   VideoLayer,
+  GroupInfo,
   JoinRequest,
   JoinResponse,
   SyncState,
