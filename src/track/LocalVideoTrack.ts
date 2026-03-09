@@ -67,28 +67,32 @@ export class LocalVideoTrack extends LocalTrack {
     ];
   }
 
+  /**
+   * Applies dynacast quality updates from the server.
+   *
+   * - Simulcast: toggles each encoding's `active` by rid.
+   * - SVC (single encoding): sets `active = false` only when ALL qualities
+   *   are disabled; otherwise keeps it `true`.
+   */
   async setDynacastQuality(
     qualities: { quality: VideoQuality; enabled: boolean }[],
   ): Promise<void> {
-    if (!this.producer) return;
-
-    // Mediasoup producer does not expose getParameters/setParameters directly on Producer type?
-    // It does, but we need to check types.
-    // Actually, Mediasoup Producer wraps RTCRtpSender, but doesn't expose setParameters easily?
-    // Wait, mediasoup-client Producer has `rtpSender` property.
-
-    const sender = this.producer.rtpSender;
+    const sender = this.producer?.rtpSender;
     if (!sender) return;
 
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) return;
 
-    for (const q of qualities) {
-      const rid = QUALITY_RID_MAP[q.quality];
-      const encoding = params.encodings.find((e) => e.rid === rid);
-      if (encoding) {
-        encoding.active = q.enabled;
+    if (params.encodings.length > 1) {
+      for (const q of qualities) {
+        const rid = QUALITY_RID_MAP[q.quality];
+        const enc = params.encodings.find((e) => e.rid === rid);
+        if (enc) {
+          enc.active = q.enabled;
+        }
       }
+    } else {
+      params.encodings[0].active = qualities.some((q) => q.enabled);
     }
 
     await sender.setParameters(params);

@@ -28,7 +28,6 @@ import {
   type TrackUnpublishedNotification,
   type TrackMutedNotification,
   type TrackSubscribedQualityChangedNotification,
-  type TrackSubscriptionStatusChangedNotification,
   type ActiveSpeakersChangedNotification,
   type RoomUpdatedNotification,
   type DisconnectNotification,
@@ -982,13 +981,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     );
 
     this.rpcClient.onNotification(
-      'track.subscriptionStatusChanged',
-      (body: TrackSubscriptionStatusChangedNotification) => {
-        this.handleSubscriptionStatusChanged(body);
-      },
-    );
-
-    this.rpcClient.onNotification(
       'activeSpeakers.changed',
       (body: ActiveSpeakersChangedNotification) => {
         this.handleActiveSpeakersChanged(body);
@@ -1092,17 +1084,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.participant.sid);
     if (!rp) return;
 
-    const prevMetadata = rp.metadata;
-    const prevName = rp.name;
     rp.updateFromInfo(body.participant);
     this.emit(RoomEvent.ParticipantUpdated, rp);
-
-    if (prevMetadata !== rp.metadata) {
-      this.emit(RoomEvent.ParticipantMetadataChanged, prevMetadata, rp);
-    }
-    if (prevName !== rp.name) {
-      this.emit(RoomEvent.ParticipantNameChanged, rp.name!, rp);
-    }
   }
 
   private handleTrackPublished(body: TrackPublishedNotification): void {
@@ -1138,35 +1121,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
    * Video track only: the server reports per-layer subscriber state.
    * When all qualities are disabled the track has no subscribers and should be paused.
    */
+  /** Video dynacast: per-layer quality change + producer pause/resume. */
   private handleSubscribedQualityChanged(body: TrackSubscribedQualityChangedNotification): void {
     if (!this._options.dynacast) return;
 
     const pub = this._localParticipant.getTrackPublicationBySid(body.trackSid);
     if (!pub?.track || !(pub.track instanceof LocalVideoTrack)) return;
 
-    const videoTrack = pub.track as LocalVideoTrack;
-    const hasSubscribers = body.subscribedQualities.some((q) => q.enabled);
-
-    videoTrack.setSubscriptionStatus(hasSubscribers).catch((err) => {
-      log.warn('Failed to update video subscription status', err);
-    });
-
-    if (hasSubscribers) {
-      videoTrack.setDynacastQuality(body.subscribedQualities).catch((err) => {
-        log.warn('Failed to set dynacast quality', err);
-      });
-    }
-  }
-
-  /** Audio track only: simple has/no subscribers signal. */
-  private handleSubscriptionStatusChanged(body: TrackSubscriptionStatusChangedNotification): void {
-    if (!this._options.dynacast) return;
-
-    const pub = this._localParticipant.getTrackPublicationBySid(body.trackSid);
-    if (!pub?.track || !(pub.track instanceof LocalTrack)) return;
-
-    (pub.track as LocalTrack).setSubscriptionStatus(body.hasSubscribers).catch((err) => {
-      log.warn('Failed to update audio subscription status', err);
+    (pub.track as LocalVideoTrack).setDynacastQuality(body.subscribedQualities).catch((err) => {
+      log.warn('Failed to set dynacast quality', err);
     });
   }
 
