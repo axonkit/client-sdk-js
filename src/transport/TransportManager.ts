@@ -96,6 +96,7 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
     url: string,
     joinResponse: JoinResponse,
     hasDtlsFingerprints: boolean,
+    rtcConfig?: RTCConfiguration,
   ): Promise<void> {
     this.url = url;
     this.joinResponse = joinResponse;
@@ -109,9 +110,16 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       log.info('Device loaded with RTP capabilities');
     }
 
+    // Build additionalSettings by layering: certificate -> server iceTransportPolicy -> user rtcConfig
     const additionalSettings: Partial<RTCConfiguration> = {};
     if (this.certificate) {
       additionalSettings.certificates = [this.certificate];
+    }
+    if (joinResponse.iceTransportPolicy) {
+      additionalSettings.iceTransportPolicy = joinResponse.iceTransportPolicy;
+    }
+    if (rtcConfig) {
+      Object.assign(additionalSettings, rtcConfig);
     }
 
     // 2. Create send transport
@@ -267,7 +275,7 @@ export class TransportManager extends TypedEventEmitter<TransportEvents> {
       transports,
     };
 
-    await this.signalClient.connect(this.url, request);
+    await this.signalClient.connect(this.url, request, this.joinResponse.room?.name);
     transports.length = 0;
   }
 

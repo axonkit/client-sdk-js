@@ -36,7 +36,6 @@ import {
   type SubscriptionClosedNotification,
   type DataSubscriptionCreateRequest,
   type DataSubscriptionClosedNotification,
-  type ActiveSpeaker,
   type GroupInfo,
   type CreateGroupResponse,
   type ListGroupsResponse,
@@ -44,6 +43,7 @@ import {
   type GroupDeletedNotification,
   type GroupParticipantJoinedNotification,
   type GroupParticipantLeftNotification,
+  type TokenRefreshedNotification,
   ConnectionQuality,
 } from './protocol/types';
 import type { RoomOptions, ReconnectPolicy } from './track/options';
@@ -61,14 +61,8 @@ import type { ChatMessage, RpcInvocationData, TextStreamHandler, ByteStreamHandl
  * Options passed when connecting to a room.
  */
 export interface ConnectOptions {
-  /** Display name used for the local participant. */
-  displayName?: string;
-  /** Room name. */
-  roomName?: string;
   /** Whether to auto-subscribe to published tracks (overrides RoomOptions). */
   autoSubscribe?: boolean;
-  /** Timeout in milliseconds to wait for peer connections. */
-  peerConnectionTimeout?: number;
   /** Additional RTCConfiguration for the peer connections. */
   rtcConfig?: RTCConfiguration;
 }
@@ -87,31 +81,65 @@ export interface RoomEvents {
   [RoomEvent.ParticipantJoined]: (participant: RemoteParticipant) => void;
   [RoomEvent.ParticipantLeft]: (participant: RemoteParticipant, reason?: string) => void;
   [RoomEvent.ParticipantUpdated]: (participant: RemoteParticipant) => void;
-  [RoomEvent.ParticipantMetadataChanged]: (prevMetadata: string | undefined, participant: Participant) => void;
+  [RoomEvent.ParticipantMetadataChanged]: (
+    prevMetadata: string | undefined,
+    participant: Participant,
+  ) => void;
   [RoomEvent.ParticipantNameChanged]: (name: string, participant: Participant) => void;
-  [RoomEvent.ParticipantAttributesChanged]: (changed: Record<string, string>, participant: Participant) => void;
-  [RoomEvent.TrackPublished]: (publication: TrackPublication, participant: RemoteParticipant) => void;
-  [RoomEvent.TrackUnpublished]: (publication: TrackPublication, participant: RemoteParticipant) => void;
-  [RoomEvent.TrackSubscribed]: (track: Track, publication: TrackPublication, participant: RemoteParticipant) => void;
+  [RoomEvent.ParticipantAttributesChanged]: (
+    changed: Record<string, string>,
+    participant: Participant,
+  ) => void;
+  [RoomEvent.TrackPublished]: (
+    publication: TrackPublication,
+    participant: RemoteParticipant,
+  ) => void;
+  [RoomEvent.TrackUnpublished]: (
+    publication: TrackPublication,
+    participant: RemoteParticipant,
+  ) => void;
+  [RoomEvent.TrackSubscribed]: (
+    track: Track,
+    publication: TrackPublication,
+    participant: RemoteParticipant,
+  ) => void;
   [RoomEvent.TrackSubscriptionFailed]: (trackSid: string, participant: RemoteParticipant) => void;
-  [RoomEvent.TrackUnsubscribed]: (track: Track, publication: TrackPublication, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackUnsubscribed]: (
+    track: Track,
+    publication: TrackPublication,
+    participant: RemoteParticipant,
+  ) => void;
   [RoomEvent.TrackMuted]: (publication: TrackPublication, participant: Participant) => void;
   [RoomEvent.TrackUnmuted]: (publication: TrackPublication, participant: Participant) => void;
-  [RoomEvent.LocalTrackPublished]: (publication: TrackPublication, participant: LocalParticipant) => void;
-  [RoomEvent.LocalTrackUnpublished]: (publication: TrackPublication, participant: LocalParticipant) => void;
+  [RoomEvent.LocalTrackPublished]: (
+    publication: TrackPublication,
+    participant: LocalParticipant,
+  ) => void;
+  [RoomEvent.LocalTrackUnpublished]: (
+    publication: TrackPublication,
+    participant: LocalParticipant,
+  ) => void;
   [RoomEvent.LocalAudioSilenceDetected]: () => void;
   [RoomEvent.ActiveSpeakersChanged]: (speakers: Participant[]) => void;
   [RoomEvent.RoomUpdated]: (room: RoomInfo) => void;
   [RoomEvent.DataReceived]: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
-  [RoomEvent.ConnectionQualityChanged]: (quality: ConnectionQuality, participant: Participant) => void;
+  [RoomEvent.ConnectionQualityChanged]: (
+    quality: ConnectionQuality,
+    participant: Participant,
+  ) => void;
   [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.VideoPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.ChatMessage]: (message: ChatMessage, participant?: Participant) => void;
-  [RoomEvent.TrackStreamStateChanged]: (publication: TrackPublication, streamState: StreamState, participant: RemoteParticipant) => void;
+  [RoomEvent.TrackStreamStateChanged]: (
+    publication: TrackPublication,
+    streamState: StreamState,
+    participant: RemoteParticipant,
+  ) => void;
   [RoomEvent.GroupCreated]: (group: GroupInfo) => void;
   [RoomEvent.GroupDeleted]: (groupId: string) => void;
   [RoomEvent.GroupParticipantJoined]: (groupId: string, participant: Participant) => void;
   [RoomEvent.GroupParticipantLeft]: (groupId: string, participant: Participant) => void;
+  [RoomEvent.TokenRefreshed]: (token: string) => void;
 }
 
 export class Room extends TypedEventEmitter<RoomEvents> {
@@ -124,6 +152,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   private url = '';
   private token = '';
+  private _refreshToken = '';
   private nodeId = '';
   private participantSid = '';
 
@@ -149,10 +178,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   private deviceChangeHandler?: () => void;
   private _canPlaybackAudio = true;
   private _canPlaybackVideo = true;
-  private _activeSpeakers: Participant[] = [];
   private _activeDeviceMap = new Map<MediaDeviceKind, string>();
   private dataStreamReceiver = new DataStreamReceiver();
   private _lastMessageTimestamp = 0;
+  private _rtcConfig?: RTCConfiguration;
 
   constructor(options?: RoomOptions) {
     super();
@@ -292,8 +321,14 @@ export class Room extends TypedEventEmitter<RoomEvents> {
    * Create a new group (breakout room) within this room.
    * Requires `canManageGroups` permission.
    */
-  async createGroup(name: string, permissions?: import('./protocol/types').ParticipantPermission): Promise<GroupInfo> {
-    const resp = await this.rpcClient.request<CreateGroupResponse>('group.create', { name, permissions });
+  async createGroup(
+    name: string,
+    permissions?: import('./protocol/types').ParticipantPermission,
+  ): Promise<GroupInfo> {
+    const resp = await this.rpcClient.request<CreateGroupResponse>('group.create', {
+      name,
+      permissions,
+    });
     return resp.group;
   }
 
@@ -335,11 +370,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
    * @param exact - If `true`, sets the `deviceId` constraint to `exact`.
    *   Defaults to `true`.
    */
-  async switchActiveDevice(
-    kind: MediaDeviceKind,
-    deviceId: string,
-    exact = true,
-  ): Promise<void> {
+  async switchActiveDevice(kind: MediaDeviceKind, deviceId: string, exact = true): Promise<void> {
     this._activeDeviceMap.set(kind, deviceId);
     if (!this._localParticipant) return;
     const constraintValue = exact ? { exact: deviceId } : deviceId;
@@ -377,13 +408,14 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
   // --- Connect ---
 
-  async connect(url: string, token: string, options?: ConnectOptions): Promise<void> {
+  async connect(url: string, token?: string, options?: ConnectOptions): Promise<void> {
     if (this._state !== RoomState.Disconnected) {
       throw new Error(`Cannot connect: room state is ${this._state}`);
     }
 
     this.url = url;
-    this.token = token;
+    this.token = token ?? '';
+    this._rtcConfig = options?.rtcConfig;
     this.setState(RoomState.Connecting);
 
     try {
@@ -399,8 +431,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       const autoSubscribe = options?.autoSubscribe ?? this._options.autoSubscribe ?? true;
 
       const joinRequest: JoinRequest = {
-        displayName: options?.displayName ?? '',
-        room: { name: options?.roomName ?? '' },
+        room: {
+          name: this._options.roomName ?? '',
+          metadata: this._options.metadata,
+        },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
           autoSubscribe,
@@ -410,7 +444,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         reconnect: false,
         participantSid: '',
         nodeId: '',
-        token,
+        token: this.token || undefined,
       };
 
       const { response: resp } = await this.signalClient.join(url, joinRequest);
@@ -418,7 +452,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
 
-      await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints);
+      await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints, this._rtcConfig);
       this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -533,7 +567,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
 
     try {
       const joinRequest: JoinRequest = {
-        displayName: this._localParticipant?.name ?? '',
         room: { name: this._name },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
@@ -543,7 +576,8 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         reconnect: true,
         participantSid: this.participantSid,
         nodeId: this.nodeId,
-        token: this.token,
+        token: this.token || undefined,
+        refreshToken: this._refreshToken || undefined,
       };
 
       const { response: resp } = await this.signalClient.join(this.url, joinRequest);
@@ -570,7 +604,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.nodeId = jr.serverInfo.nodeId;
       this.applyJoinResponse(jr);
 
-      await this.transportManager.setup(this.url, jr, false);
+      await this.transportManager.setup(this.url, jr, false, this._rtcConfig);
       this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -746,15 +780,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     }
   }
 
-  // --- Token Refresh ---
-
-  async refreshToken(newToken: string): Promise<string> {
-    this.token = newToken;
-    const resp = await this.rpcClient.request<{ token: string }>('token.refresh', { token: newToken });
-    this.token = resp.token;
-    return resp.token;
-  }
-
   // --- Audio Playback ---
 
   /**
@@ -769,12 +794,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         if (pub.track && pub.kind === 'audio') {
           const el = pub.track.attach();
           promises.push(
-            el.play().then(() => {
-              if (!this._canPlaybackAudio) {
-                this._canPlaybackAudio = true;
-                this.emit(RoomEvent.AudioPlaybackStatusChanged, true);
-              }
-            }).catch(() => {}),
+            el
+              .play()
+              .then(() => {
+                if (!this._canPlaybackAudio) {
+                  this._canPlaybackAudio = true;
+                  this.emit(RoomEvent.AudioPlaybackStatusChanged, true);
+                }
+              })
+              .catch(() => {}),
           );
         }
       }
@@ -794,12 +822,15 @@ export class Room extends TypedEventEmitter<RoomEvents> {
         if (pub.track && pub.kind === 'video') {
           const el = pub.track.attach();
           promises.push(
-            el.play().then(() => {
-              if (!this._canPlaybackVideo) {
-                this._canPlaybackVideo = true;
-                this.emit(RoomEvent.VideoPlaybackStatusChanged, true);
-              }
-            }).catch(() => {}),
+            el
+              .play()
+              .then(() => {
+                if (!this._canPlaybackVideo) {
+                  this._canPlaybackVideo = true;
+                  this.emit(RoomEvent.VideoPlaybackStatusChanged, true);
+                }
+              })
+              .catch(() => {}),
           );
         }
       }
@@ -882,6 +913,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     this._serverInfo = jr.serverInfo;
     this.participantSid = jr.participant.sid;
 
+    if (jr.refreshToken) {
+      this._refreshToken = jr.refreshToken;
+    }
+
     if (!this._localParticipant) {
       this._localParticipant = new LocalParticipant(
         jr.participant.sid,
@@ -901,12 +936,20 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       return this.handleSubscriptionCreate(body);
     });
 
-    this.rpcClient.onRequest('dataSubscription.create', async (body: DataSubscriptionCreateRequest) => {
-      return this.handleDataSubscriptionCreate(body);
-    });
+    this.rpcClient.onRequest(
+      'dataSubscription.create',
+      async (body: DataSubscriptionCreateRequest) => {
+        return this.handleDataSubscriptionCreate(body);
+      },
+    );
   }
 
   private registerNotificationHandlers(): void {
+    this.rpcClient.onNotification('token.refreshed', (body: TokenRefreshedNotification) => {
+      this._refreshToken = body.token;
+      this.emit(RoomEvent.TokenRefreshed, body.token);
+    });
+
     this.rpcClient.onNotification('participant.joined', (body: ParticipantJoinedNotification) => {
       this.handleParticipantJoined(body);
     });
@@ -931,17 +974,26 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.handleTrackMuted(body);
     });
 
-    this.rpcClient.onNotification('track.subscribedQualityChanged', (body: TrackSubscribedQualityChangedNotification) => {
-      this.handleSubscribedQualityChanged(body);
-    });
+    this.rpcClient.onNotification(
+      'track.subscribedQualityChanged',
+      (body: TrackSubscribedQualityChangedNotification) => {
+        this.handleSubscribedQualityChanged(body);
+      },
+    );
 
-    this.rpcClient.onNotification('track.subscriptionStatusChanged', (body: TrackSubscriptionStatusChangedNotification) => {
-      this.handleSubscriptionStatusChanged(body);
-    });
+    this.rpcClient.onNotification(
+      'track.subscriptionStatusChanged',
+      (body: TrackSubscriptionStatusChangedNotification) => {
+        this.handleSubscriptionStatusChanged(body);
+      },
+    );
 
-    this.rpcClient.onNotification('activeSpeakers.changed', (body: ActiveSpeakersChangedNotification) => {
-      this.handleActiveSpeakersChanged(body);
-    });
+    this.rpcClient.onNotification(
+      'activeSpeakers.changed',
+      (body: ActiveSpeakersChangedNotification) => {
+        this.handleActiveSpeakersChanged(body);
+      },
+    );
 
     this.rpcClient.onNotification('room.updated', (body: RoomUpdatedNotification) => {
       this.handleRoomUpdated(body);
@@ -955,9 +1007,12 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.handleSubscriptionClosed(body);
     });
 
-    this.rpcClient.onNotification('dataSubscription.closed', (body: DataSubscriptionClosedNotification) => {
-      this.handleDataSubscriptionClosed(body);
-    });
+    this.rpcClient.onNotification(
+      'dataSubscription.closed',
+      (body: DataSubscriptionClosedNotification) => {
+        this.handleDataSubscriptionClosed(body);
+      },
+    );
 
     this.rpcClient.onNotification('chat.message', (body: any) => {
       this.handleChatMessage(body);
@@ -989,21 +1044,27 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.emit(RoomEvent.GroupDeleted, body.groupId);
     });
 
-    this.rpcClient.onNotification('group.participantJoined', (body: GroupParticipantJoinedNotification) => {
-      const participant = this.getParticipantBySid(body.participantSid);
-      if (participant) {
-        participant.groupId = body.groupId;
-        this.emit(RoomEvent.GroupParticipantJoined, body.groupId, participant);
-      }
-    });
+    this.rpcClient.onNotification(
+      'group.participantJoined',
+      (body: GroupParticipantJoinedNotification) => {
+        const participant = this.getParticipantBySid(body.participantSid);
+        if (participant) {
+          participant.groupId = body.groupId;
+          this.emit(RoomEvent.GroupParticipantJoined, body.groupId, participant);
+        }
+      },
+    );
 
-    this.rpcClient.onNotification('group.participantLeft', (body: GroupParticipantLeftNotification) => {
-      const participant = this.getParticipantBySid(body.participantSid);
-      if (participant) {
-        participant.groupId = undefined;
-        this.emit(RoomEvent.GroupParticipantLeft, body.groupId, participant);
-      }
-    });
+    this.rpcClient.onNotification(
+      'group.participantLeft',
+      (body: GroupParticipantLeftNotification) => {
+        const participant = this.getParticipantBySid(body.participantSid);
+        if (participant) {
+          participant.groupId = undefined;
+          this.emit(RoomEvent.GroupParticipantLeft, body.groupId, participant);
+        }
+      },
+    );
   }
 
   // --- Notification Handlers ---
@@ -1119,7 +1180,6 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       }
     }
     activeSpeakers.sort((a, b) => b.audioLevel - a.audioLevel);
-    this._activeSpeakers = activeSpeakers;
     this.emit(RoomEvent.ActiveSpeakersChanged, activeSpeakers);
   }
 
@@ -1173,7 +1233,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     }
   }
 
-  private async handleSubscriptionCreate(body: SubscriptionCreateRequest): Promise<{ ok: boolean }> {
+  private async handleSubscriptionCreate(
+    body: SubscriptionCreateRequest,
+  ): Promise<{ ok: boolean }> {
     const rp = this._remoteParticipants.get(body.publisherSid);
     if (!rp) {
       log.warn(`Subscription create for unknown publisher ${body.publisherSid}`);
@@ -1187,7 +1249,9 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     return rp.handleSubscriptionCreate(body);
   }
 
-  private async handleDataSubscriptionCreate(body: DataSubscriptionCreateRequest): Promise<{ ok: boolean }> {
+  private async handleDataSubscriptionCreate(
+    body: DataSubscriptionCreateRequest,
+  ): Promise<{ ok: boolean }> {
     const rp = this._remoteParticipants.get(body.publisherSid);
     if (!rp) {
       log.warn(`Data subscription create for unknown publisher ${body.publisherSid}`);

@@ -66,26 +66,25 @@ await room.disconnect();
 
 ### Room
 
-| Method | Description |
-|--------|-------------|
-| `connect(url, token)` | Connect to a room |
-| `disconnect()` | Disconnect from the room |
-| `prepareConnection(url, token)` | Pre-warm connection |
-| `startAudio()` | Start audio playback (for autoplay policy) |
-| `refreshToken(token)` | Refresh authentication token |
+| Method                          | Description                                |
+| ------------------------------- | ------------------------------------------ |
+| `connect(url, token)`           | Connect to a room                          |
+| `disconnect()`                  | Disconnect from the room                   |
+| `prepareConnection(url, token)` | Pre-warm connection                        |
+| `startAudio()`                  | Start audio playback (for autoplay policy) |
 
 ### LocalParticipant
 
-| Method | Description |
-|--------|-------------|
-| `setCameraEnabled(enabled)` | Toggle camera |
-| `setMicrophoneEnabled(enabled)` | Toggle microphone |
-| `setScreenShareEnabled(enabled)` | Toggle screen share |
-| `publishTrack(track, options?)` | Publish a local track |
-| `unpublishTrack(track)` | Unpublish a track |
-| `publishData(data, options?)` | Send data via DataChannel |
-| `updateMetadata(metadata)` | Update participant metadata |
-| `updateName(name)` | Update participant name |
+| Method                           | Description                 |
+| -------------------------------- | --------------------------- |
+| `setCameraEnabled(enabled)`      | Toggle camera               |
+| `setMicrophoneEnabled(enabled)`  | Toggle microphone           |
+| `setScreenShareEnabled(enabled)` | Toggle screen share         |
+| `publishTrack(track, options?)`  | Publish a local track       |
+| `unpublishTrack(track)`          | Unpublish a track           |
+| `publishData(data, options?)`    | Send data via DataChannel   |
+| `updateMetadata(metadata)`       | Update participant metadata |
+| `updateName(name)`               | Update participant name     |
 
 ### Events
 
@@ -109,6 +108,7 @@ pnpm build
 ```
 
 Outputs:
+
 - `dist/axonkit-client.esm.js` — ES Module
 - `dist/axonkit-client.umd.js` — UMD (for `<script>` tags)
 - `dist/index.d.ts` — TypeScript declarations

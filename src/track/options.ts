@@ -707,6 +707,18 @@ export interface RoomOptions {
    * @defaultValue `true`
    */
   disconnectOnPageLeave?: boolean;
+
+  /**
+   * Room name sent in the JoinRequest for server-side routing and room
+   * creation. Required when using load-balanced deployments.
+   */
+  roomName?: string;
+
+  /**
+   * Room metadata (e.g. meeting topic) sent in the JoinRequest when the
+   * room is first created.
+   */
+  metadata?: string;
 }
 
 /**

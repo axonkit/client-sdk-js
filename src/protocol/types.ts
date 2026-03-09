@@ -240,14 +240,14 @@ export interface ConnectionSettings {
 // --- Join / Connect ---
 
 export interface JoinRequest {
-  displayName: string;
-  room: { name: string };
+  room: { name: string; metadata?: string };
   clientInfo: ClientInfo;
   connectionSettings: ConnectionSettings;
   reconnect: boolean;
   participantSid: string;
   nodeId: string;
   token?: string;
+  refreshToken?: string;
 }
 
 export interface JoinResponse {
@@ -264,6 +264,12 @@ export interface JoinResponse {
   rtpCapabilities: mediasoupTypes.RtpCapabilities;
   otherParticipants?: ParticipantInfo[];
   fullReconnect?: boolean;
+  refreshToken?: string;
+  iceTransportPolicy?: RTCIceTransportPolicy;
+}
+
+export interface TokenRefreshedNotification {
+  token: string;
 }
 
 export interface ReconnectResponse {
@@ -332,14 +338,6 @@ export interface PingRequest {
 export interface PingResponse {
   lastTimestamp: number;
   serverTime: number;
-}
-
-export interface TokenRefreshRequest {
-  token: string;
-}
-
-export interface TokenRefreshResponse {
-  token: string;
 }
 
 export interface TrackPublishRequest {

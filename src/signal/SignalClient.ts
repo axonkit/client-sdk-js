@@ -27,8 +27,8 @@ export class SignalClient {
 
   async join(url: string, request: JoinRequest): Promise<JoinResult> {
     const u = new URL(`${url}/rtc/join`);
-    if (this.nodeId) {
-      u.searchParams.set('nodeId', this.nodeId);
+    if (request.room.name) {
+      u.searchParams.set('room', request.room.name);
     }
     const endpoint = u.toString();
     log.info(`Joining room at ${endpoint}`);
@@ -63,10 +63,10 @@ export class SignalClient {
     return { response, logId: this.logId };
   }
 
-  async connect(url: string, request: ConnectRequest): Promise<void> {
+  async connect(url: string, request: ConnectRequest, roomName?: string): Promise<void> {
     const u = new URL(`${url}/rtc/connect`);
-    if (this.nodeId) {
-      u.searchParams.set('nodeId', this.nodeId);
+    if (roomName) {
+      u.searchParams.set('room', roomName);
     }
     const endpoint = u.toString();
     log.info(`Connecting transports at ${endpoint}`);

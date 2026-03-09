@@ -211,6 +211,14 @@ export enum RoomEvent {
 
 
   /**
+   * The server has pushed a new refresh token. Applications should persist
+   * this token for reconnection.
+   *
+   * args: `(token: string)`
+   */
+  TokenRefreshed = 'tokenRefreshed',
+
+  /**
    * Video playback status has changed. Similar to
    * {@link RoomEvent.AudioPlaybackStatusChanged} but for video.
    */
