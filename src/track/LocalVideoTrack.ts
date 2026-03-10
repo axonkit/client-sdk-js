@@ -3,6 +3,7 @@ import { TrackKind, TrackSource, VideoQuality } from '../protocol/types';
 import type { VideoEncoding, VideoResolution } from './options';
 import { videoSimulcastPresets, defaultVideoEncoding } from './options';
 import { getLogger } from '../utils/logger';
+import { isFireFox } from '../utils/browser';
 
 const log = getLogger('LocalVideoTrack');
 
@@ -85,12 +86,31 @@ export class LocalVideoTrack extends LocalTrack {
 
     let changed = false;
     if (params.encodings.length > 1) {
+      const presets = this.getSimulcastEncodings();
       for (const q of qualities) {
         const rid = QUALITY_RID_MAP[q.quality];
         const enc = params.encodings.find((e) => e.rid === rid);
-        if (enc && (enc.active ?? true) !== q.enabled) {
-          enc.active = q.enabled;
-          changed = true;
+        if (enc) {
+          if ((enc.active ?? true) !== q.enabled) {
+            enc.active = q.enabled;
+            changed = true;
+          }
+          // FireFox does not support setting encoding.active to false, so we
+          // have a workaround of lowering its bitrate and resolution to the min.
+          if (isFireFox()) {
+            if (q.enabled) {
+              const preset = presets.find((p) => p.rid === rid);
+              if (preset) {
+                enc.scaleResolutionDownBy = preset.scaleResolutionDownBy;
+                enc.maxBitrate = preset.maxBitrate;
+                enc.maxFramerate = preset.maxFramerate;
+              }
+            } else {
+              enc.scaleResolutionDownBy = 4;
+              enc.maxBitrate = 10;
+              enc.maxFramerate = 2;
+            }
+          }
         }
       }
     } else {

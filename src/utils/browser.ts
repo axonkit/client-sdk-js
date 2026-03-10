@@ -36,6 +36,11 @@ export interface AudioAnalyserOptions {
   useFloat?: boolean;
 }
 
+export function isFireFox(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return navigator.userAgent.includes('Firefox/');
+}
+
 /** Check whether the current browser supports the minimum WebRTC features. */
 export function isBrowserSupported(): boolean {
   if (typeof RTCPeerConnection === 'undefined') return false;

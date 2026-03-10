@@ -530,7 +530,6 @@ export interface TrackPublishDefaults {
    * set this to true if you would prefer to clean up unpublished local track automatically.
    */
   stopTrackOnUnpublish?: boolean;
-
 }
 
 /**
@@ -677,13 +676,7 @@ export interface RoomOptions {
    */
   publishDefaults?: TrackPublishDefaults;
 
-  /**
-   * Whether to stop local tracks when they are unpublished.
-   *
-   * @defaultValue `true`
-   */
-  stopLocalTrackOnUnpublish?: boolean;
-
+ 
   /**
    * Policy parameters for automatic reconnection.
    */
@@ -699,7 +692,7 @@ export interface RoomOptions {
 
   /**
    * Room name sent in the JoinRequest for server-side routing and room
-   * creation. Required when using load-balanced deployments.
+   * creation.
    */
   roomName?: string;
 
