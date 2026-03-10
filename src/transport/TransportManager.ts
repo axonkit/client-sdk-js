@@ -1,6 +1,6 @@
 import * as mediasoupClient from 'mediasoup-client';
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { TypedEventEmitter } from '../utils/events';
+import { TypedEmitter } from '../utils/typedEmitter';
 import { getLogger } from '../utils/logger';
 import { SignalClient } from '../signal/SignalClient';
 import type {
@@ -34,13 +34,13 @@ export type ProduceDataCallback = (
   errback: (error: Error) => void,
 ) => void;
 
-export interface TransportEvents {
+export type TransportEvents = {
   signalReady: (sendDC: mediasoupTypes.DataProducer, recvDC: mediasoupTypes.DataConsumer) => void;
   connectionFailed: (direction: 'send' | 'recv') => void;
   closed: () => void;
-}
+};
 
-export class TransportManager extends TypedEventEmitter<TransportEvents> {
+export class TransportManager extends TypedEmitter<TransportEvents> {
   device: mediasoupClient.Device;
   sendTransport: mediasoupTypes.Transport | null = null;
   recvTransport: mediasoupTypes.Transport | null = null;

@@ -144,7 +144,8 @@ export {
 // Utilities — Logger
 export { setLogLevel, setLogger, setLogExtension, LogLevel } from './utils/logger';
 export type { LoggerInterface, LogExtension } from './utils/logger';
-export { TypedEventEmitter } from './utils/events';
+export { TypedEmitter } from './utils/typedEmitter';
+export type { TypedEmitter as TypedEventEmitter } from './utils/typedEmitter';
 
 // Utilities — Browser
 export {

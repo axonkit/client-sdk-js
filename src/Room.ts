@@ -1,10 +1,9 @@
-import { TypedEventEmitter } from './utils/events';
+import { TypedEmitter } from './utils/typedEmitter';
 import { getLogger } from './utils/logger';
 import { SignalClient, isReconnectResponse } from './signal/SignalClient';
 import { RPCClient } from './signal/RPCClient';
 import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
-import { LocalTrackPublication } from './participant/LocalTrackPublication';
 import { RemoteParticipant } from './participant/RemoteParticipant';
 import { Participant, type TrackPublication } from './participant/Participant';
 import { VERSION, PROTOCOL_VERSION } from './version';
@@ -71,7 +70,7 @@ export interface ConnectOptions {
 
 const log = getLogger('Room');
 
-export interface RoomEvents {
+export type RoomEvents = {
   [RoomEvent.Connected]: () => void;
   [RoomEvent.Disconnected]: (reason?: DisconnectReason) => void;
   [RoomEvent.Reconnecting]: () => void;
@@ -142,9 +141,9 @@ export interface RoomEvents {
   [RoomEvent.GroupParticipantJoined]: (groupId: string, participant: Participant) => void;
   [RoomEvent.GroupParticipantLeft]: (groupId: string, participant: Participant) => void;
   [RoomEvent.TokenRefreshed]: (token: string) => void;
-}
+};
 
-export class Room extends TypedEventEmitter<RoomEvents> {
+export class Room extends TypedEmitter<RoomEvents> {
   private _state: RoomState = RoomState.Disconnected;
   private _name = '';
   private _sid = '';

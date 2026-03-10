@@ -1,8 +1,8 @@
-import { TypedEventEmitter } from '../utils/events';
+import { TypedEmitter } from '../utils/typedEmitter';
 import { TrackKind, TrackSource, StreamState } from '../protocol/types';
 import { TrackEvent } from '../events';
 
-export interface TrackEvents {
+export type TrackEvents = {
   [TrackEvent.Muted]: (track: Track) => void;
   [TrackEvent.Unmuted]: (track: Track) => void;
   [TrackEvent.Ended]: (track: Track) => void;
@@ -19,15 +19,20 @@ export interface TrackEvents {
   [TrackEvent.AudioSilenceDetected]: () => void;
   [TrackEvent.StreamStateChanged]: (track: Track, streamState: StreamState) => void;
   [TrackEvent.TimeSyncUpdate]: (update: { timestamp: number; rtpTimestamp: number }) => void;
-}
+};
 
 const recycledElements: HTMLAudioElement[] = [];
 
-export abstract class Track extends TypedEventEmitter<TrackEvents> {
+export abstract class Track extends TypedEmitter<TrackEvents> {
   kind: TrackKind;
   source: TrackSource;
   sid?: string;
-  mediaStreamTrack: MediaStreamTrack;
+
+  protected _mediaStreamTrack: MediaStreamTrack;
+
+  get mediaStreamTrack(): MediaStreamTrack {
+    return this._mediaStreamTrack;
+  }
 
   private _streamState: StreamState = StreamState.Active;
 
@@ -44,7 +49,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
     super();
     this.kind = kind;
     this.source = source;
-    this.mediaStreamTrack = mediaStreamTrack;
+    this._mediaStreamTrack = mediaStreamTrack;
     mediaStreamTrack.addEventListener('ended', () => {
       this.emit(TrackEvent.Ended, this);
     });
@@ -180,7 +185,7 @@ export abstract class Track extends TypedEventEmitter<TrackEvents> {
 
   stop(): void {
     this.stopMonitor();
-    this.mediaStreamTrack?.stop();
+    this._mediaStreamTrack?.stop();
     this.detach();
   }
 }

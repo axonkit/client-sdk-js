@@ -46,7 +46,7 @@ export class RemoteTrack extends Track {
   }
 
   setMediaStreamTrack(track: MediaStreamTrack): void {
-    this.mediaStreamTrack = track;
+    this._mediaStreamTrack = track;
     for (const el of this.attachedElements) {
       const stream = new MediaStream([track]);
       el.srcObject = stream;

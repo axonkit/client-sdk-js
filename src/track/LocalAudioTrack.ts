@@ -26,7 +26,7 @@ export class LocalAudioTrack extends LocalTrack {
   override async mute(): Promise<typeof this> {
     await super.mute();
     if (this.stopOnMute) {
-      this.mediaStreamTrack.stop();
+      this._mediaStreamTrack.stop();
     }
     return this;
   }

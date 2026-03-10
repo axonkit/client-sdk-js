@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '../utils/events';
+import { TypedEmitter } from '../utils/typedEmitter';
 import type {
   ParticipantInfo,
   ParticipantPermission,
@@ -120,7 +120,7 @@ export class TrackPublication {
   unmute(): void {}
 }
 
-export interface ParticipantEvents {
+export type ParticipantEvents = {
   [ParticipantEvent.TrackPublished]: (publication: TrackPublication) => void;
   [ParticipantEvent.TrackUnpublished]: (publication: TrackPublication) => void;
   [ParticipantEvent.TrackMuted]: (publication: TrackPublication) => void;
@@ -147,9 +147,9 @@ export interface ParticipantEvents {
   ) => void;
   [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
   [ParticipantEvent.ChatMessage]: (message: ChatMessage) => void;
-}
+};
 
-export abstract class Participant extends TypedEventEmitter<ParticipantEvents> {
+export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   sid: string;
   identity: string;
   name?: string;

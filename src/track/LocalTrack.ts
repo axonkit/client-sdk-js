@@ -1,3 +1,4 @@
+import { Mutex } from 'async-mutex';
 import { Track, type TrackDimensions, type TrackEvents } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { TrackEvent } from '../events';
@@ -11,20 +12,24 @@ const log = getLogger('LocalTrack');
 const MONITOR_FREQUENCY = 2000;
 const DEFAULT_DIMENSIONS_TIMEOUT = 1000;
 
-export interface LocalTrackEvents extends TrackEvents {
+export type LocalTrackEvents = TrackEvents & {
   [TrackEvent.Restarted]: (track: LocalTrack) => void;
-}
+};
 
 export class LocalTrack extends Track {
   private _constraints?: MediaTrackConstraints;
   private _producer?: mediasoupTypes.Producer;
-  private _processor?: TrackProcessor;
+  protected _processor?: TrackProcessor;
+  protected processorElement?: HTMLMediaElement;
   private _isUpstreamPaused = false;
   private _providedByUser = false;
   private _prevBytesSent = 0;
   private _prevStatsTime = 0;
   private _mediaTrackMuteDebounce: ReturnType<typeof setTimeout> | undefined;
   private _handleVisibilityChange = this.onVisibilityChange.bind(this);
+
+  protected trackChangeLock = new Mutex();
+  protected pauseUpstreamLock = new Mutex();
 
   constructor(
     kind: TrackKind,
@@ -39,13 +44,22 @@ export class LocalTrack extends Track {
     this.attachMediaTrackListeners(mediaStreamTrack);
   }
 
+  /**
+   * Returns the processed track if a processor is active, otherwise the
+   * raw source track. Consumers should use this for playback and
+   * publishing.
+   */
+  override get mediaStreamTrack(): MediaStreamTrack {
+    return this._processor?.processedTrack ?? this._mediaStreamTrack;
+  }
+
   get isLocal(): boolean {
     return true;
   }
 
   /** The MediaStreamTrack id. */
   get id(): string {
-    return this.mediaStreamTrack.id;
+    return this._mediaStreamTrack.id;
   }
 
   /** Current capture constraints. */
@@ -90,6 +104,15 @@ export class LocalTrack extends Track {
   }
 
   /**
+   * Returns the settings of the *original* source track, ignoring any
+   * active processor.  Useful when you need the real capture resolution
+   * or device info regardless of post-processing.
+   */
+  getSourceTrackSettings(): MediaTrackSettings {
+    return this._mediaStreamTrack.getSettings();
+  }
+
+  /**
    * Set a {@link TrackProcessor} on this track. Pass `undefined` to remove
    * the current processor.
    */
@@ -97,53 +120,62 @@ export class LocalTrack extends Track {
     processor: TrackProcessor | undefined,
     showProcessedStreamLocally = true,
   ): Promise<void> {
-    if (this._processor) {
-      await this._processor.destroy();
-      this._processor = undefined;
-    }
-
-    if (!processor) {
-      if (this._producer) {
-        await this._producer.replaceTrack({ track: this.mediaStreamTrack });
+    const release = await this.trackChangeLock.acquire();
+    try {
+      if (this._processor) {
+        await this._processor.destroy();
+        this._processor = undefined;
       }
-      return;
-    }
 
-    const opts: ProcessorOptions = {
-      kind: this.kind,
-      track: this.mediaStreamTrack,
-    };
-    await processor.init(opts);
-
-    this._processor = processor;
-
-    if (processor.processedTrack) {
-      if (showProcessedStreamLocally) {
-        for (const el of this.attachedElements) {
-          const stream = new MediaStream([processor.processedTrack]);
-          el.srcObject = stream;
+      if (!processor) {
+        this.destroyProcessorElement();
+        if (this._producer) {
+          await this._producer.replaceTrack({ track: this._mediaStreamTrack });
         }
+        this.reattachElementsToTrack(this._mediaStreamTrack);
+        return;
+      }
+
+      this.ensureProcessorElement();
+
+      const opts: ProcessorOptions = {
+        kind: this.kind,
+        track: this._mediaStreamTrack,
+        element: this.processorElement,
+      };
+      await processor.init(opts);
+
+      this._processor = processor;
+
+      const outputTrack = processor.processedTrack ?? this._mediaStreamTrack;
+      if (showProcessedStreamLocally) {
+        this.reattachElementsToTrack(outputTrack);
       }
       if (this._producer) {
-        await this._producer.replaceTrack({ track: processor.processedTrack });
+        await this._producer.replaceTrack({ track: outputTrack });
       }
+    } finally {
+      release();
     }
   }
 
   /** Stop and remove the current processor. */
   async stopProcessor(): Promise<void> {
-    if (!this._processor) return;
+    const release = await this.trackChangeLock.acquire();
+    try {
+      if (!this._processor) return;
 
-    this._processor.processedTrack?.stop();
-    await this._processor.destroy();
-    this._processor = undefined;
+      this._processor.processedTrack?.stop();
+      await this._processor.destroy();
+      this._processor = undefined;
+      this.destroyProcessorElement();
 
-    if (this._producer) {
-      await this._producer.replaceTrack({ track: this.mediaStreamTrack });
-    }
-    for (const el of this.attachedElements) {
-      const stream = new MediaStream([this.mediaStreamTrack]);
-      el.srcObject = stream;
+      if (this._producer) {
+        await this._producer.replaceTrack({ track: this._mediaStreamTrack });
+      }
+      this.reattachElementsToTrack(this._mediaStreamTrack);
+    } finally {
+      release();
     }
   }
 
@@ -165,27 +197,37 @@ export class LocalTrack extends Track {
    * not sending to remote participants.
    */
   async pauseUpstream(): Promise<void> {
-    if (this._isUpstreamPaused) return;
-    if (!this._producer) {
-      log.warn('Cannot pause upstream for an unpublished track');
-      return;
+    const release = await this.pauseUpstreamLock.acquire();
+    try {
+      if (this._isUpstreamPaused) return;
+      if (!this._producer) {
+        log.warn('Cannot pause upstream for an unpublished track');
+        return;
+      }
+      this._isUpstreamPaused = true;
+      await this._producer.replaceTrack({ track: null as any });
+      this.emit(TrackEvent.UpstreamPaused, this);
+    } finally {
+      release();
     }
-    this._isUpstreamPaused = true;
-    await this._producer.replaceTrack({ track: null as any });
-    this.emit(TrackEvent.UpstreamPaused, this);
   }
 
   /** Resume publishing after a call to {@link pauseUpstream}. */
   async resumeUpstream(): Promise<void> {
-    if (!this._isUpstreamPaused) return;
-    if (!this._producer) {
-      log.warn('Cannot resume upstream for an unpublished track');
-      return;
+    const release = await this.pauseUpstreamLock.acquire();
+    try {
+      if (!this._isUpstreamPaused) return;
+      if (!this._producer) {
+        log.warn('Cannot resume upstream for an unpublished track');
+        return;
+      }
+      this._isUpstreamPaused = false;
+      const trackToSend = this._processor?.processedTrack ?? this.mediaStreamTrack;
+      await this._producer.replaceTrack({ track: trackToSend });
+      this.emit(TrackEvent.UpstreamResumed, this);
+    } finally {
+      release();
     }
-    this._isUpstreamPaused = false;
-    const trackToSend = this._processor?.processedTrack ?? this.mediaStreamTrack;
-    await this._producer.replaceTrack({ track: trackToSend });
-    this.emit(TrackEvent.UpstreamResumed, this);
   }
 
   /**
@@ -237,40 +279,65 @@ export class LocalTrack extends Track {
   }
 
   async restart(constraints?: MediaTrackConstraints): Promise<void> {
-    if (constraints) {
-      this._constraints = constraints;
+    const release = await this.trackChangeLock.acquire();
+    try {
+      if (constraints) {
+        this._constraints = constraints;
+      }
+
+      const kind = this.kind === TrackKind.Audio ? 'audio' : 'video';
+
+      // Safari requires stopping the old audio track before acquiring a new
+      // one, otherwise it may throw "MediaStreamTrack ended due to capture failure".
+      if (kind === 'audio' && isSafariBased()) {
+        this._mediaStreamTrack?.stop();
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        [kind]: this._constraints ?? true,
+      });
+
+      const newTrack = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
+
+      if (!newTrack) throw new Error('Failed to get new media track');
+
+      await this.replaceTrackInternal(newTrack);
+      log.info(`Track ${this.sid ?? 'unknown'} restarted`);
+      (this as any).emit(TrackEvent.Restarted, this);
+    } finally {
+      release();
     }
-
-    const kind = this.kind === TrackKind.Audio ? 'audio' : 'video';
-
-    // Safari requires stopping the old audio track before acquiring a new
-    // one, otherwise it may throw "MediaStreamTrack ended due to capture failure".
-    if (kind === 'audio' && isSafariBased()) {
-      this.mediaStreamTrack?.stop();
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      [kind]: this._constraints ?? true,
-    });
-
-    const newTrack = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
-
-    if (!newTrack) throw new Error('Failed to get new media track');
-
-    await this.replaceTrack(newTrack);
-    log.info(`Track ${this.sid ?? 'unknown'} restarted`);
-    (this as any).emit(TrackEvent.Restarted, this);
   }
 
   async replaceTrack(newTrack: MediaStreamTrack): Promise<void> {
-    this.detachMediaTrackListeners(this.mediaStreamTrack);
-    const oldTrack = this.mediaStreamTrack;
-    this.mediaStreamTrack = newTrack;
+    const release = await this.trackChangeLock.acquire();
+    try {
+      await this.replaceTrackInternal(newTrack);
+    } finally {
+      release();
+    }
+  }
+
+  /** Internal replace without acquiring trackChangeLock (caller must hold it). */
+  private async replaceTrackInternal(newTrack: MediaStreamTrack): Promise<void> {
+    this.detachMediaTrackListeners(this._mediaStreamTrack);
+    const oldTrack = this._mediaStreamTrack;
+    this._mediaStreamTrack = newTrack;
     this.attachMediaTrackListeners(newTrack);
+
+    // Reattach source track to the processorElement so the processor
+    // can read from the new source.
+    if (this.processorElement) {
+      this.attachTrackToProcessorElement(newTrack);
+    }
 
     let trackForProducer = newTrack;
     if (this._processor) {
-      await this._processor.restart({ kind: this.kind, track: newTrack });
+      await this._processor.restart({
+        kind: this.kind,
+        track: newTrack,
+        element: this.processorElement,
+      });
       if (this._processor.processedTrack) {
         trackForProducer = this._processor.processedTrack;
       }
@@ -280,10 +347,8 @@ export class LocalTrack extends Track {
       await this._producer.replaceTrack({ track: trackForProducer });
     }
 
-    for (const el of this.attachedElements) {
-      const stream = new MediaStream([newTrack]);
-      el.srcObject = stream;
-    }
+    const displayTrack = this._processor?.processedTrack ?? newTrack;
+    this.reattachElementsToTrack(displayTrack);
 
     if (!this._providedByUser) {
       oldTrack?.stop();
@@ -291,7 +356,7 @@ export class LocalTrack extends Track {
   }
 
   stop(): void {
-    this.detachMediaTrackListeners(this.mediaStreamTrack);
+    this.detachMediaTrackListeners(this._mediaStreamTrack);
     this.removeVisibilityListener();
     if (this._mediaTrackMuteDebounce) {
       clearTimeout(this._mediaTrackMuteDebounce);
@@ -301,6 +366,7 @@ export class LocalTrack extends Track {
       this._processor.destroy().catch(() => {});
       this._processor = undefined;
     }
+    this.destroyProcessorElement();
     super.stop();
     log.debug(`Track ${this.sid ?? 'unknown'} stopped`);
   }
@@ -314,7 +380,7 @@ export class LocalTrack extends Track {
         this._producer.resume();
       }
     } else {
-      this.mediaStreamTrack.enabled = !muted;
+      this._mediaStreamTrack.enabled = !muted;
     }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
@@ -393,13 +459,66 @@ export class LocalTrack extends Track {
     if (document.visibilityState !== 'visible') return;
     // When returning to foreground on mobile, the track may have been
     // released by the OS. Try to restart it if the track has ended.
-    if (this.mediaStreamTrack.readyState === 'ended' && !this._providedByUser) {
+    if (this._mediaStreamTrack.readyState === 'ended' && !this._providedByUser) {
       log.info(`Track ${this.sid ?? 'unknown'} ended while in background, restarting`);
       try {
         await this.restart();
       } catch (err) {
         log.warn(`Failed to restart track after visibility change`, err);
       }
+    }
+  }
+
+  // --- processorElement lifecycle ---
+
+  /**
+   * Ensures a hidden HTMLMediaElement exists for the processor to read
+   * frames from the source track. Reuses the existing element if present.
+   */
+  private ensureProcessorElement(): void {
+    if (this.processorElement) {
+      this.attachTrackToProcessorElement(this._mediaStreamTrack);
+      return;
+    }
+    const el = document.createElement(
+      this.kind === TrackKind.Audio ? 'audio' : 'video',
+    );
+    el.muted = true;
+    el.autoplay = true;
+    if (el instanceof HTMLVideoElement) {
+      el.playsInline = true;
+    }
+    // Keep the element out of the visible layout
+    el.style.width = '0';
+    el.style.height = '0';
+    el.style.position = 'absolute';
+    el.style.opacity = '0';
+
+    this.attachTrackToProcessorElement(this._mediaStreamTrack, el);
+    el.play().catch(() => {});
+    this.processorElement = el;
+  }
+
+  private attachTrackToProcessorElement(
+    track: MediaStreamTrack,
+    el?: HTMLMediaElement,
+  ): void {
+    const target = el ?? this.processorElement;
+    if (!target) return;
+    target.srcObject = new MediaStream([track]);
+  }
+
+  private destroyProcessorElement(): void {
+    if (!this.processorElement) return;
+    this.processorElement.srcObject = null;
+    this.processorElement.remove();
+    this.processorElement = undefined;
+  }
+
+  /** Re-attach all user-facing elements to the given track. */
+  private reattachElementsToTrack(track: MediaStreamTrack): void {
+    for (const el of this.attachedElements) {
+      el.srcObject = new MediaStream([track]);
     }
   }
 }

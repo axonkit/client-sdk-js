@@ -1,5 +1,5 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { TypedEventEmitter } from '../utils/events';
+import { TypedEmitter } from '../utils/typedEmitter';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 import { AxonError, TimeoutError } from '../protocol/errors';
@@ -26,12 +26,12 @@ interface PendingRequest {
 type RequestHandler = (body: any) => Promise<any>;
 type NotificationHandler = (body: any) => void;
 
-export interface RPCEvents {
+export type RPCEvents = {
   closed: () => void;
   error: (err: Error) => void;
-}
+};
 
-export class RPCClient extends TypedEventEmitter<RPCEvents> {
+export class RPCClient extends TypedEmitter<RPCEvents> {
   private sendDC: mediasoupTypes.DataProducer | null = null;
   private recvDC: mediasoupTypes.DataConsumer | null = null;
   private pending = new Map<string, PendingRequest>();

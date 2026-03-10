@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '../utils/events';
+import { TypedEmitter } from '../utils/typedEmitter';
 
 export enum CheckStatus {
   Idle = 'idle',
@@ -16,15 +16,15 @@ export interface CheckInfo {
   error?: string;
 }
 
-interface ConnectionCheckEvents {
+type ConnectionCheckEvents = {
   statusChanged: (info: CheckInfo) => void;
-}
+};
 
 /**
  * Runs a series of connectivity checks against a given server URL.
  * Useful for diagnosing connection problems before entering a room.
  */
-export class ConnectionCheck extends TypedEventEmitter<ConnectionCheckEvents> {
+export class ConnectionCheck extends TypedEmitter<ConnectionCheckEvents> {
   private url: string;
   private token: string;
 
