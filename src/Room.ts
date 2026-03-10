@@ -4,6 +4,7 @@ import { SignalClient, isReconnectResponse } from './signal/SignalClient';
 import { RPCClient } from './signal/RPCClient';
 import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
+import { LocalTrackPublication } from './participant/LocalTrackPublication';
 import { RemoteParticipant } from './participant/RemoteParticipant';
 import { Participant, type TrackPublication } from './participant/Participant';
 import { VERSION, PROTOCOL_VERSION } from './version';
@@ -53,6 +54,7 @@ import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
 import { StatsCollector } from './stats/StatsCollector';
 import { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
+import { isWeb } from './utils/browser';
 import { DataStreamReceiver } from './data-stream/DataStreamManager';
 import type { ChatMessage, RpcInvocationData, TextStreamHandler, ByteStreamHandler } from './types';
 
@@ -512,9 +514,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
       this.emit(RoomEvent.Connected);
       log.info(`Connected to room ${this._name}`);
 
-      if (this._options.disconnectOnPageLeave !== false) {
-        this.setupPageLeaveHandler();
-      }
+      this.setupPageLeaveHandler();
     } catch (err) {
       this.setState(RoomState.Disconnected);
       this.transportManager.close();
@@ -1333,8 +1333,10 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     }
     this._remoteParticipants.clear();
 
-    if (this.pageLeaveHandler) {
+    if (this.pageLeaveHandler && isWeb()) {
       window.removeEventListener('beforeunload', this.pageLeaveHandler);
+      window.removeEventListener('pagehide', this.pageLeaveHandler);
+      window.removeEventListener('freeze', this.pageLeaveHandler);
       this.pageLeaveHandler = undefined;
     }
 
@@ -1355,11 +1357,14 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   }
 
   private setupPageLeaveHandler(): void {
-    if (typeof window === 'undefined') return;
+    if (!isWeb()) return;
 
     this.pageLeaveHandler = () => {
       this.disconnect();
     };
+
     window.addEventListener('beforeunload', this.pageLeaveHandler);
+    window.addEventListener('pagehide', this.pageLeaveHandler);
+    window.addEventListener('freeze', this.pageLeaveHandler);
   }
 }

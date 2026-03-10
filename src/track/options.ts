@@ -675,23 +675,11 @@ export interface RoomOptions {
    * per-track.
    */
   publishDefaults?: TrackPublishDefaults;
-
  
   /**
    * Policy parameters for automatic reconnection.
    */
   reconnectPolicy?: ReconnectPolicy;
-
-  /**
-   * Disconnect from the room when the user navigates away from the page.
-   *
-   * When enabled (default), the SDK listens for `beforeunload` and
-   * `pagehide` events to trigger a disconnect. A `freeze` event listener
-   * is always registered in web environments regardless of this setting.
-   *
-   * @defaultValue `true`
-   */
-  disconnectOnPageLeave?: boolean;
 
   /**
    * Room name sent in the JoinRequest for server-side routing and room
