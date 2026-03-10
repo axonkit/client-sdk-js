@@ -2,6 +2,7 @@ import { Track, type TrackDimensions, type TrackEvents } from './Track';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
+import { getBrowser, isSafariBased, isWeb, isMobile } from '../utils/browser';
 import { types as mediasoupTypes } from 'mediasoup-client';
 import type { TrackProcessor, ProcessorOptions } from './processor/types';
 
@@ -22,6 +23,8 @@ export class LocalTrack extends Track {
   private _providedByUser = false;
   private _prevBytesSent = 0;
   private _prevStatsTime = 0;
+  private _mediaTrackMuteDebounce: ReturnType<typeof setTimeout> | undefined;
+  private _handleVisibilityChange = this.onVisibilityChange.bind(this);
 
   constructor(
     kind: TrackKind,
@@ -33,6 +36,7 @@ export class LocalTrack extends Track {
     super(kind, source ?? TrackSource.Unknown, mediaStreamTrack);
     this._constraints = constraints;
     this._providedByUser = userProvided;
+    this.attachMediaTrackListeners(mediaStreamTrack);
   }
 
   get isLocal(): boolean {
@@ -209,6 +213,12 @@ export class LocalTrack extends Track {
     if (this.kind === TrackKind.Audio) {
       throw new Error('Cannot get dimensions for audio tracks');
     }
+
+    // iOS browsers report wrong initial resolution; a short delay fixes it.
+    if (getBrowser()?.os === 'iOS') {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
     const started = Date.now();
     while (Date.now() - started < timeout) {
       const dims = this.dimensions;
@@ -232,6 +242,13 @@ export class LocalTrack extends Track {
     }
 
     const kind = this.kind === TrackKind.Audio ? 'audio' : 'video';
+
+    // Safari requires stopping the old audio track before acquiring a new
+    // one, otherwise it may throw "MediaStreamTrack ended due to capture failure".
+    if (kind === 'audio' && isSafariBased()) {
+      this.mediaStreamTrack?.stop();
+    }
+
     const stream = await navigator.mediaDevices.getUserMedia({
       [kind]: this._constraints ?? true,
     });
@@ -246,8 +263,10 @@ export class LocalTrack extends Track {
   }
 
   async replaceTrack(newTrack: MediaStreamTrack): Promise<void> {
+    this.detachMediaTrackListeners(this.mediaStreamTrack);
     const oldTrack = this.mediaStreamTrack;
     this.mediaStreamTrack = newTrack;
+    this.attachMediaTrackListeners(newTrack);
 
     let trackForProducer = newTrack;
     if (this._processor) {
@@ -272,6 +291,12 @@ export class LocalTrack extends Track {
   }
 
   stop(): void {
+    this.detachMediaTrackListeners(this.mediaStreamTrack);
+    this.removeVisibilityListener();
+    if (this._mediaTrackMuteDebounce) {
+      clearTimeout(this._mediaTrackMuteDebounce);
+      this._mediaTrackMuteDebounce = undefined;
+    }
     if (this._processor) {
       this._processor.destroy().catch(() => {});
       this._processor = undefined;
@@ -313,6 +338,68 @@ export class LocalTrack extends Track {
       this._prevStatsTime = now;
     } catch {
       // stats collection may fail after producer is closed
+    }
+  }
+
+  // --- MediaStreamTrack mute/unmute listeners ---
+
+  private attachMediaTrackListeners(track: MediaStreamTrack): void {
+    track.addEventListener('mute', this.onMediaTrackMute);
+    track.addEventListener('unmute', this.onMediaTrackUnmute);
+  }
+
+  private detachMediaTrackListeners(track: MediaStreamTrack): void {
+    track.removeEventListener('mute', this.onMediaTrackMute);
+    track.removeEventListener('unmute', this.onMediaTrackUnmute);
+  }
+
+  private onMediaTrackMute = (): void => {
+    // Hardware/system may mute the track (e.g. bluetooth disconnect).
+    // Debounce to avoid rapid toggling.
+    if (this._mediaTrackMuteDebounce) clearTimeout(this._mediaTrackMuteDebounce);
+    this._mediaTrackMuteDebounce = setTimeout(() => {
+      if (this.mediaStreamTrack.muted) {
+        log.debug(`MediaStreamTrack muted by system for ${this.sid ?? 'unknown'}`);
+        this.pauseUpstream().catch(() => {});
+      }
+    }, 200);
+  };
+
+  private onMediaTrackUnmute = (): void => {
+    if (this._mediaTrackMuteDebounce) {
+      clearTimeout(this._mediaTrackMuteDebounce);
+      this._mediaTrackMuteDebounce = undefined;
+    }
+    if (this._isUpstreamPaused) {
+      log.debug(`MediaStreamTrack unmuted by system for ${this.sid ?? 'unknown'}`);
+      this.resumeUpstream().catch(() => {});
+    }
+  };
+
+  // --- App visibility ---
+
+  /** Start listening for visibility changes (should be called after publishing). */
+  addVisibilityListener(): void {
+    if (!isWeb() || !isMobile()) return;
+    document.addEventListener('visibilitychange', this._handleVisibilityChange);
+  }
+
+  private removeVisibilityListener(): void {
+    if (!isWeb()) return;
+    document.removeEventListener('visibilitychange', this._handleVisibilityChange);
+  }
+
+  private async onVisibilityChange(): Promise<void> {
+    if (document.visibilityState !== 'visible') return;
+    // When returning to foreground on mobile, the track may have been
+    // released by the OS. Try to restart it if the track has ended.
+    if (this.mediaStreamTrack.readyState === 'ended' && !this._providedByUser) {
+      log.info(`Track ${this.sid ?? 'unknown'} ended while in background, restarting`);
+      try {
+        await this.restart();
+      } catch (err) {
+        log.warn(`Failed to restart track after visibility change`, err);
+      }
     }
   }
 }

@@ -11,6 +11,7 @@ import {
   createLocalScreenTracks,
 } from '../track/create';
 import { computeVideoEncodings, isSVCCodec, getDefaultDegradationPreference } from '../track/publishUtils';
+import { supportsAV1, supportsVP9, isFireFox } from '../utils/browser';
 import { RPCClient } from '../signal/RPCClient';
 import { TransportManager } from '../transport/TransportManager';
 import { TrackKind, TrackSource } from '../protocol/types';
@@ -262,6 +263,14 @@ export class LocalParticipant extends Participant {
       localTrack.source = opts.source;
     }
 
+    // --- Duplicate publish detection ---
+    for (const [, pub] of this.trackPublications) {
+      if (pub.track === localTrack) {
+        log.warn('track has already been published, skipping');
+        return pub;
+      }
+    }
+
     // --- Stereo / DTX / RED auto-configuration for audio ---
     const isAudio = localTrack.kind === TrackKind.Audio;
     let isStereo = false;
@@ -298,6 +307,24 @@ export class LocalParticipant extends Participant {
       localTrack.source === TrackSource.ScreenShare ||
       localTrack.source === TrackSource.ScreenShareAudio;
 
+    // --- Video codec support checks with fallback ---
+    if (isVideo) {
+      if (opts.videoCodec === 'av1' && !supportsAV1()) {
+        log.warn('AV1 not supported by browser, falling back to default codec');
+        opts.videoCodec = undefined;
+      }
+      if (opts.videoCodec === 'vp9' && !supportsVP9()) {
+        log.warn('VP9 not supported by browser, falling back to default codec');
+        opts.videoCodec = undefined;
+      }
+      opts.videoCodec ??= 'vp8';
+    }
+
+    // Firefox screenshare simulcast produces broken layer 0
+    if (isScreenShare && isFireFox()) {
+      opts.simulcast = false;
+    }
+
     // --- Video: SVC scalabilityMode defaults ---
     if (isVideo && opts.videoCodec && isSVCCodec(opts.videoCodec)) {
       if (isScreenShare) {
@@ -309,11 +336,21 @@ export class LocalParticipant extends Participant {
     // --- Compute encodings ---
     let encodings: mediasoupTypes.RtpEncodingParameters[] | undefined;
     if (isVideo && localTrack instanceof LocalVideoTrack) {
-      const dim = localTrack.dimensions;
+      let dims: { width: number; height: number } = { width: 0, height: 0 };
+      try {
+        dims = await localTrack.waitForDimensions();
+      } catch {
+        const defaultRes = this.roomOptions?.videoCaptureDefaults?.resolution ?? {
+          width: 1280,
+          height: 720,
+        };
+        dims = { width: defaultRes.width, height: defaultRes.height };
+        log.warn('could not determine track dimensions, using defaults', dims);
+      }
       encodings = computeVideoEncodings(
         isScreenShare,
-        dim?.width,
-        dim?.height,
+        dims.width,
+        dims.height,
         opts,
       );
     } else if (isAudio) {
@@ -339,6 +376,19 @@ export class LocalParticipant extends Participant {
       );
     }
 
+    // Chrome bug: screenshare + SVC limits to 5fps with default contentHint.
+    // Force 'motion' to work around it.
+    if (
+      isScreenShare &&
+      isVideo &&
+      opts.videoCodec &&
+      isSVCCodec(opts.videoCodec) &&
+      'contentHint' in localTrack.mediaStreamTrack
+    ) {
+      localTrack.mediaStreamTrack.contentHint = 'motion';
+      log.debug('set contentHint to motion for SVC screenshare');
+    }
+
     const clientTrackId = generateLogId();
 
     const producePromise = new Promise<string>((resolve, reject) => {
@@ -356,10 +406,12 @@ export class LocalParticipant extends Participant {
             };
 
             if (isVideo && localTrack instanceof LocalVideoTrack) {
-              const dim = localTrack.dimensions;
-              if (dim) {
+              try {
+                const dim = await localTrack.waitForDimensions();
                 req.width = dim.width;
                 req.height = dim.height;
+              } catch {
+                // dimensions unavailable, send without them
               }
             }
 
@@ -414,6 +466,7 @@ export class LocalParticipant extends Participant {
     this.addTrackPublicationToMaps(publication);
 
     localTrack.startMonitor();
+    localTrack.addVisibilityListener();
 
     producer.observer.on('pause', () => {
       publication.muted = true;
@@ -426,10 +479,30 @@ export class LocalParticipant extends Participant {
     });
 
     producer.observer.on('trackended', () => {
-      log.info(`Track ${trackSid} ended, unpublishing`);
-      this.unpublishTrack(localTrack).catch((err) => {
-        log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
-      });
+      const isManaged =
+        !localTrack.isUserProvided &&
+        (localTrack.source === TrackSource.Camera ||
+          localTrack.source === TrackSource.Microphone);
+
+      if (isManaged) {
+        log.info(`Track ${trackSid} ended, attempting restart`);
+        localTrack
+          .restart()
+          .then(() => {
+            log.info(`Track ${trackSid} successfully restarted after ended`);
+          })
+          .catch((restartErr) => {
+            log.warn(`Failed to restart track ${trackSid}, unpublishing`, restartErr);
+            this.unpublishTrack(localTrack).catch((err) => {
+              log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
+            });
+          });
+      } else {
+        log.info(`Track ${trackSid} ended, unpublishing`);
+        this.unpublishTrack(localTrack).catch((err) => {
+          log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
+        });
+      }
     });
 
     producer.on('transportclose', () => {
@@ -448,11 +521,10 @@ export class LocalParticipant extends Participant {
    * Unpublish a track from the room.
    * @param track - The track or MediaStreamTrack to unpublish.
    * @param stopOnUnpublish - Whether to stop the track after unpublishing.
-   *   Defaults to `true`.
+   *   Defaults to `false`.
    */
   async unpublishTrack(
     track: LocalTrack | MediaStreamTrack,
-    stopOnUnpublish = true,
   ): Promise<LocalTrackPublication | undefined> {
     let trackSid: string | undefined;
 
@@ -483,9 +555,6 @@ export class LocalParticipant extends Participant {
 
     if (publication) {
       this.removeTrackPublicationFromMaps(trackSid);
-      if (stopOnUnpublish && publication.track instanceof LocalTrack) {
-        publication.track.stop();
-      }
       this.emit(ParticipantEvent.TrackUnpublished, publication);
       this.emit(ParticipantEvent.LocalTrackUnpublished, publication);
     }

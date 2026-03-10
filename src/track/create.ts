@@ -10,6 +10,10 @@ import {
   type ScreenShareCaptureOptions,
   type CreateLocalTracksOptions,
 } from './options';
+import { isSafari17Based } from '../utils/browser';
+import { getLogger } from '../utils/logger';
+
+const log = getLogger('create');
 
 function audioConstraints(opts: AudioCaptureOptions | true): MediaTrackConstraints {
   if (opts === true) opts = defaultAudioCaptureOptions;
@@ -100,14 +104,28 @@ export async function createLocalVideoTrack(
 export async function createLocalScreenTracks(
   options?: ScreenShareCaptureOptions,
 ): Promise<LocalTrack[]> {
-  const constraints: DisplayMediaStreamOptions = {
-    video:
-      options?.video ??
-      ({
-        width: options?.resolution?.width,
-        height: options?.resolution?.height,
-        frameRate: options?.frameRate,
-      } as MediaTrackConstraints),
+  // Safari 17 fails getDisplayMedia when resolution constraints are set,
+  // so skip them on Safari 17+.
+  const skipResolution = isSafari17Based();
+
+  const videoConstraint: Record<string, unknown> = {};
+  if (options?.video && typeof options.video === 'object') {
+    Object.assign(videoConstraint, options.video);
+  }
+  if (!skipResolution) {
+    if (options?.resolution?.width) videoConstraint.width = options.resolution.width;
+    if (options?.resolution?.height) videoConstraint.height = options.resolution.height;
+  } else if (options?.resolution) {
+    log.debug('skipping resolution constraints for Safari 17+ screen share');
+  }
+  if (options?.frameRate) videoConstraint.frameRate = options.frameRate;
+
+  const constraints: DisplayMediaStreamOptions & Record<string, unknown> = {
+    video: options?.video === true || !options?.video
+      ? Object.keys(videoConstraint).length > 0
+        ? videoConstraint
+        : true
+      : videoConstraint,
     audio: options?.audio
       ? typeof options.audio === 'boolean'
         ? true
@@ -115,10 +133,26 @@ export async function createLocalScreenTracks(
       : false,
   };
 
-  const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+  // Pass through extended getDisplayMedia options
+  if (options?.selfBrowserSurface) constraints.selfBrowserSurface = options.selfBrowserSurface;
+  if (options?.surfaceSwitching) constraints.surfaceSwitching = options.surfaceSwitching;
+  if (options?.systemAudio) constraints.systemAudio = options.systemAudio;
+  if (options?.preferCurrentTab !== undefined) {
+    constraints.preferCurrentTab = options.preferCurrentTab;
+  }
+  if (options?.controller) constraints.controller = options.controller;
+  if (options?.suppressLocalAudioPlayback !== undefined) {
+    constraints.suppressLocalAudioPlayback = options.suppressLocalAudioPlayback;
+  }
+
+  const stream = await navigator.mediaDevices.getDisplayMedia(constraints as DisplayMediaStreamOptions);
   const tracks: LocalTrack[] = [];
 
   for (const vt of stream.getVideoTracks()) {
+    // Apply contentHint if specified
+    if (options?.contentHint && 'contentHint' in vt) {
+      vt.contentHint = options.contentHint;
+    }
     tracks.push(new LocalVideoTrack(vt, TrackSource.ScreenShare));
   }
   for (const at of stream.getAudioTracks()) {

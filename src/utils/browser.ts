@@ -92,14 +92,35 @@ export function supportsDynacast(): boolean {
   );
 }
 
-/** Check for AV1 support via `RTCRtpSender.getCapabilities`. */
+/**
+ * Check for AV1 support. Safari reports AV1 capability on iPhone 14 but
+ * doesn't actually support it; Firefox supports AV1 decode but SVC
+ * publishing is broken.
+ */
 export function supportsAV1(): boolean {
+  if (isSafari() || isFireFox()) return false;
   return hasCodecSupport('video/AV1');
 }
 
-/** Check for VP9 support via `RTCRtpSender.getCapabilities`. */
+/**
+ * Check for VP9 support. Firefox VP9 SVC publishing is broken
+ * (https://bugzilla.mozilla.org/show_bug.cgi?id=1633876). Safari below
+ * version 16 does not support VP9.
+ */
 export function supportsVP9(): boolean {
+  if (isFireFox()) return false;
+  const b = getBrowser();
+  if (b.os === 'iOS') {
+    if (!b.osVersion || compareVersions(b.osVersion, '16') < 0) return false;
+  } else if (b.name === 'Safari') {
+    if (!b.version || compareVersions(b.version, '16') < 0) return false;
+  }
   return hasCodecSupport('video/VP9');
+}
+
+/** Check for H.265/HEVC support via `RTCRtpSender.getCapabilities`. */
+export function supportsH265(): boolean {
+  return hasCodecSupport('video/H265');
 }
 
 /** Whether the browser supports `HTMLMediaElement.setSinkId` for audio output device selection. */
@@ -275,6 +296,46 @@ export function createAudioAnalyser(
       ctx.close();
     },
   };
+}
+
+/** Safari 17+ or iOS 17+. */
+export function isSafari17Based(): boolean {
+  const b = getBrowser();
+  if (b.os === 'iOS' && b.osVersion && compareVersions(b.osVersion, '17') >= 0) return true;
+  if (b.name === 'Safari' && b.version && compareVersions(b.version, '17') >= 0) return true;
+  return false;
+}
+
+/**
+ * Safari 18.4+ uses a different SVC API that requires
+ * `scaleResolutionDownBy` to be set on each encoding.
+ */
+export function isSafariSvcApi(browser?: BrowserDetails): boolean {
+  const b = browser ?? getBrowser();
+  if (b.os === 'iOS' && b.osVersion && compareVersions(b.osVersion, '18.4') >= 0) return true;
+  if (b.name === 'Safari' && b.version && compareVersions(b.version, '18.4') >= 0) return true;
+  return false;
+}
+
+/**
+ * Unwrap a `ConstrainDOMString` / `ConstrainULong` / `ConstrainDouble` to
+ * its primitive value. Handles plain values, `{ exact }`, `{ ideal }`, and
+ * arrays (returns the first element).
+ */
+export function unwrapConstraint(constraint: ConstrainDOMString): string;
+export function unwrapConstraint(constraint: ConstrainULong): number;
+export function unwrapConstraint(constraint: ConstrainDouble): number;
+export function unwrapConstraint(constraint: any): string | number {
+  if (typeof constraint === 'string' || typeof constraint === 'number') {
+    return constraint;
+  }
+  if (Array.isArray(constraint)) {
+    return constraint[0];
+  }
+  if (typeof constraint === 'object') {
+    return constraint.exact ?? constraint.ideal ?? constraint.min ?? constraint.max ?? 0;
+  }
+  return constraint;
 }
 
 // --- Internal helpers ---

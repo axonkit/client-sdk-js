@@ -7,6 +7,14 @@ import {
 } from './options';
 import { TrackSource } from '../protocol/types';
 import { getLogger } from '../utils/logger';
+import {
+  getBrowser,
+  isSafariBased,
+  isSafariSvcApi,
+  isFireFox,
+  compareVersions,
+  unwrapConstraint,
+} from '../utils/browser';
 
 const log = getLogger('publishUtils');
 
@@ -150,7 +158,8 @@ function encodingsFromPresets(
     if (maxFramerate) {
       encoding.maxFramerate = maxFramerate;
     }
-    if (preset.encoding.priority && idx === 0) {
+    const canSetPriority = isFireFox() || idx === 0;
+    if (preset.encoding.priority && canSetPriority) {
       encoding.priority = preset.encoding.priority;
       encoding.networkPriority = preset.encoding.priority;
     }
@@ -204,12 +213,33 @@ export function computeVideoEncodings(
       throw new Error(`unsupported scalabilityMode: ${scalabilityMode}`);
     }
 
-    encodings.push({
-      maxBitrate: videoEncoding.maxBitrate,
-      maxFramerate: original.encoding.maxFramerate,
+    // Safari (all versions) and Chrome < 113 use legacy SVC specification:
+    // multiple encodings with rid and layered bitrates.
+    const browser = getBrowser();
+    if (
+      isSafariBased() ||
+      (browser.name === 'Chrome' && compareVersions(browser.version, '113') < 0)
+    ) {
+      const bitratesRatio = sm.suffix === 'h' ? 2 : 3;
+      const requireScale = isSafariSvcApi(browser);
+      for (let i = 0; i < sm.spatial; i += 1) {
+        encodings.push({
+          rid: videoRids[2 - i],
+          maxBitrate: videoEncoding.maxBitrate / bitratesRatio ** i,
+          maxFramerate: original.encoding.maxFramerate,
+          scaleResolutionDownBy: requireScale ? 2 ** i : undefined,
+        });
+      }
       /* @ts-ignore */
-      scalabilityMode,
-    });
+      encodings[0].scalabilityMode = scalabilityMode;
+    } else {
+      encodings.push({
+        maxBitrate: videoEncoding.maxBitrate,
+        maxFramerate: original.encoding.maxFramerate,
+        /* @ts-ignore */
+        scalabilityMode,
+      });
+    }
 
     if (original.encoding.priority) {
       encodings[0].priority = original.encoding.priority;
@@ -253,14 +283,17 @@ export function computeVideoEncodings(
   return encodingsFromPresets(width, height, [original]);
 }
 
-function parseScalabilityMode(mode: string): { spatial: number; temporal: number } {
-  const results = mode.match(/^L(\d)T(\d)/);
+function parseScalabilityMode(
+  mode: string,
+): { spatial: number; temporal: number; suffix?: 'h' | '_KEY' | '_KEY_SHIFT' } {
+  const results = mode.match(/^L(\d)T(\d)(h|_KEY|_KEY_SHIFT)?$/);
   if (!results) {
     throw new Error(`invalid scalability mode: ${mode}`);
   }
   return {
     spatial: parseInt(results[1]),
     temporal: parseInt(results[2]),
+    suffix: results[3] as 'h' | '_KEY' | '_KEY_SHIFT' | undefined,
   };
 }
 
@@ -276,12 +309,7 @@ export function getDefaultDegradationPreference(
     return 'maintain-resolution';
   }
   if (constraints?.height) {
-    const h =
-      typeof constraints.height === 'object'
-        ? (constraints.height as ConstrainULongRange).ideal ??
-          (constraints.height as ConstrainULongRange).max ??
-          0
-        : constraints.height;
+    const h = unwrapConstraint(constraints.height as ConstrainULong);
     if (typeof h === 'number' && h >= 1080) {
       return 'maintain-resolution';
     }
