@@ -526,22 +526,11 @@ export interface TrackPublishDefaults {
   codecOptions?: PublishCodecOptions;
 
   /**
-   * Whether the mediasoup producer should stop the `MediaStreamTrack` when
-   * the producer is closed.
+   * should local track be stopped when they are unpublished. defaults to false
+   * set this to true if you would prefer to clean up unpublished local track automatically.
    */
-  stopTracks?: boolean;
+  stopTrackOnUnpublish?: boolean;
 
-  /**
-   * Whether to disable (mute) the `MediaStreamTrack` when the producer is
-   * paused.
-   */
-  disableTrackOnPause?: boolean;
-
-  /**
-   * Whether to send zero RTP when the producer is paused, instead of
-   * disabling the track.
-   */
-  zeroRtpOnPause?: boolean;
 }
 
 /**

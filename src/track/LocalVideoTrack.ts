@@ -83,21 +83,29 @@ export class LocalVideoTrack extends LocalTrack {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) return;
 
+    let changed = false;
     if (params.encodings.length > 1) {
       for (const q of qualities) {
         const rid = QUALITY_RID_MAP[q.quality];
         const enc = params.encodings.find((e) => e.rid === rid);
-        if (enc) {
+        if (enc && (enc.active ?? true) !== q.enabled) {
           enc.active = q.enabled;
+          changed = true;
         }
       }
     } else {
-      params.encodings[0].active = qualities.some((q) => q.enabled);
+      const shouldBeActive = qualities.some((q) => q.enabled);
+      if ((params.encodings[0].active ?? true) !== shouldBeActive) {
+        params.encodings[0].active = shouldBeActive;
+        changed = true;
+      }
     }
 
-    await sender.setParameters(params);
-    const detail = qualities.map((q) => `${q.quality}=${q.enabled}`).join(',');
-    log.debug(`Dynacast quality updated for ${this.sid ?? 'unknown'}: [${detail}]`);
+    if (changed) {
+      await sender.setParameters(params);
+      const detail = qualities.map((q) => `${q.quality}=${q.enabled}`).join(',');
+      log.debug(`Dynacast quality updated for ${this.sid ?? 'unknown'}: [${detail}]`);
+    }
   }
 
   async setDeviceId(deviceId: string): Promise<void> {

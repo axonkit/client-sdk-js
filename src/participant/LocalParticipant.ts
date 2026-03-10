@@ -267,7 +267,7 @@ export class LocalParticipant extends Participant {
     let codec: mediasoupTypes.RtpCodecCapability | undefined;
     if (isVideo && options?.videoCodec) {
       const mimeType = `video/${options.videoCodec}`;
-      codec = this.transportManager.device.rtpCapabilities.codecs?.find(
+      codec = this.transportManager.device.recvRtpCapabilities.codecs?.find(
         (c) => c.mimeType.toLowerCase() === mimeType,
       );
     }
@@ -312,9 +312,8 @@ export class LocalParticipant extends Participant {
       encodings,
       codecOptions,
       codec,
-      stopTracks: options?.stopTracks,
-      disableTrackOnPause: options?.disableTrackOnPause,
-      zeroRtpOnPause: options?.zeroRtpOnPause,
+      stopTracks: options?.stopTrackOnUnpublish ?? false,
+      disableTrackOnPause: true,
       appData: { clientTrackId, source: localTrack.source },
     });
 
