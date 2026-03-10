@@ -128,6 +128,25 @@ export class LocalVideoTrack extends LocalTrack {
     }
   }
 
+  private degradationPreference?: RTCDegradationPreference;
+
+  /**
+   * Set the degradation preference hint for the browser encoder.
+   * Takes effect on the next `setParameters` call (or immediately if
+   * an RTP sender is available).
+   */
+  async setDegradationPreference(preference: RTCDegradationPreference): Promise<void> {
+    this.degradationPreference = preference;
+    const sender = this.producer?.rtpSender;
+    if (!sender) return;
+
+    const params = sender.getParameters();
+    if (params.degradationPreference !== preference) {
+      params.degradationPreference = preference;
+      await sender.setParameters(params);
+    }
+  }
+
   async setDeviceId(deviceId: string): Promise<void> {
     await this.restart({ ...(this.constraints ?? {}), deviceId: { exact: deviceId } });
   }

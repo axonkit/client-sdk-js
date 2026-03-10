@@ -451,7 +451,8 @@ export interface TrackPublishDefaults {
   dtx?: boolean;
 
   /**
-   * RED (Redundant Audio Data). Enabled by default for mono tracks.
+   * RED (Redundant Encoding for audio). Enabled by default for mono tracks.
+   * When using stereo, RED is automatically disabled unless explicitly set.
    */
   red?: boolean;
 

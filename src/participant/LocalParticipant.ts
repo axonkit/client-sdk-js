@@ -10,6 +10,7 @@ import {
   createLocalVideoTrack,
   createLocalScreenTracks,
 } from '../track/create';
+import { computeVideoEncodings, isSVCCodec, getDefaultDegradationPreference } from '../track/publishUtils';
 import { RPCClient } from '../signal/RPCClient';
 import { TransportManager } from '../transport/TransportManager';
 import { TrackKind, TrackSource } from '../protocol/types';
@@ -29,6 +30,7 @@ import type {
   VideoCaptureOptions,
   ScreenShareCaptureOptions,
   PublishCodecOptions,
+  RoomOptions,
 } from '../track/options';
 import { ParticipantEvent } from '../events';
 import { getLogger } from '../utils/logger';
@@ -62,6 +64,9 @@ export class LocalParticipant extends Participant {
   private _lastMicrophoneError?: Error;
   private participantTrackPermissions: ParticipantTrackPermission[] = [];
   private allParticipantsAllowedToSubscribe = true;
+
+  /** Room-level options passed in from the Room instance. */
+  roomOptions?: RoomOptions;
 
   get isLocal(): boolean {
     return true;
@@ -113,7 +118,11 @@ export class LocalParticipant extends Participant {
   ): Promise<TrackPublication | undefined> {
     if (enabled) {
       try {
-        const track = await createLocalVideoTrack(captureOptions);
+        const mergedCapture = {
+          ...this.roomOptions?.videoCaptureDefaults,
+          ...captureOptions,
+        };
+        const track = await createLocalVideoTrack(mergedCapture);
         return await this.publishTrack(track, { ...publishOptions, source: TrackSource.Camera });
       } catch (e) {
         this._lastCameraError = e instanceof Error ? e : new Error(String(e));
@@ -135,7 +144,11 @@ export class LocalParticipant extends Participant {
   ): Promise<TrackPublication | undefined> {
     if (enabled) {
       try {
-        const track = await createLocalAudioTrack(captureOptions);
+        const mergedCapture = {
+          ...this.roomOptions?.audioCaptureDefaults,
+          ...captureOptions,
+        };
+        const track = await createLocalAudioTrack(mergedCapture);
         return await this.publishTrack(track, {
           ...publishOptions,
           source: TrackSource.Microphone,
@@ -188,9 +201,17 @@ export class LocalParticipant extends Participant {
   ): Promise<void> {
     let tracks: LocalTrack[];
     try {
+      const mergedAudio = {
+        ...this.roomOptions?.audioCaptureDefaults,
+        ...captureOptions?.audio,
+      };
+      const mergedVideo = {
+        ...this.roomOptions?.videoCaptureDefaults,
+        ...captureOptions?.video,
+      };
       tracks = await createLocalTracks({
-        audio: captureOptions?.audio ?? true,
-        video: captureOptions?.video ?? true,
+        audio: mergedAudio,
+        video: mergedVideo,
       });
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
@@ -231,42 +252,88 @@ export class LocalParticipant extends Participant {
       localTrack = track;
     }
 
-    if (options?.source) {
-      localTrack.source = options.source;
+    // Merge room-level publishDefaults with per-track overrides
+    const opts: TrackPublishOptions = {
+      ...this.roomOptions?.publishDefaults,
+      ...options,
+    };
+
+    if (opts.source) {
+      localTrack.source = opts.source;
+    }
+
+    // --- Stereo / DTX / RED auto-configuration for audio ---
+    const isAudio = localTrack.kind === TrackKind.Audio;
+    let isStereo = false;
+    if (isAudio) {
+      const settings = localTrack.mediaStreamTrack.getSettings();
+      const constraints = localTrack.mediaStreamTrack.getConstraints();
+      const isStereoInput =
+        ('channelCount' in settings && (settings as any).channelCount === 2) ||
+        constraints.channelCount === 2;
+      isStereo = opts.forceStereo ?? isStereoInput;
+
+      if (isStereo) {
+        if (opts.dtx === undefined) {
+          log.info('Opus DTX will be disabled for stereo tracks by default. Enable explicitly to override.');
+        }
+        if (opts.red === undefined) {
+          log.info('Opus RED will be disabled for stereo tracks by default. Enable explicitly to override.');
+        }
+        opts.dtx ??= false;
+        opts.red ??= false;
+      }
+
+      // stopMicTrackOnMute
+      if (opts.stopMicTrackOnMute && localTrack instanceof LocalAudioTrack) {
+        localTrack.stopOnMute = true;
+      }
     }
 
     const sendTransport = this.transportManager.sendTransport;
     if (!sendTransport) throw new Error('Send transport not available');
 
     const isVideo = localTrack.kind === TrackKind.Video;
+    const isScreenShare =
+      localTrack.source === TrackSource.ScreenShare ||
+      localTrack.source === TrackSource.ScreenShareAudio;
 
+    // --- Video: SVC scalabilityMode defaults ---
+    if (isVideo && opts.videoCodec && isSVCCodec(opts.videoCodec)) {
+      if (isScreenShare) {
+        opts.scalabilityMode ??= 'L1T3';
+      }
+      opts.scalabilityMode ??= 'L3T3_KEY';
+    }
+
+    // --- Compute encodings ---
     let encodings: mediasoupTypes.RtpEncodingParameters[] | undefined;
     if (isVideo && localTrack instanceof LocalVideoTrack) {
-      if (options?.scalabilityMode) {
-        const enc = options.videoEncoding;
-        encodings = [
-          {
-            scalabilityMode: options.scalabilityMode,
-            maxBitrate: enc?.maxBitrate,
-            maxFramerate: enc?.maxFramerate,
-          },
-        ];
-      } else {
-        if (options?.simulcast !== false) {
-          localTrack.setSimulcast(true);
-        }
-        if (options?.videoEncoding) {
-          localTrack.setEncoding(options.videoEncoding);
-        }
-        encodings = localTrack.getSimulcastEncodings();
+      const dim = localTrack.dimensions;
+      encodings = computeVideoEncodings(
+        isScreenShare,
+        dim?.width,
+        dim?.height,
+        opts,
+      );
+    } else if (isAudio) {
+      // Audio encoding from audioPreset or audioBitrate
+      const audioBitrate = opts.audioPreset?.maxBitrate ?? opts.audioBitrate;
+      const audioPriority = opts.audioPreset?.priority ?? 'high';
+      if (audioBitrate !== undefined) {
+        encodings = [{
+          maxBitrate: audioBitrate,
+          priority: audioPriority,
+          networkPriority: audioPriority,
+        }];
       }
     }
 
-    const codecOptions = this.buildCodecOptions(options);
+    const codecOptions = this.buildCodecOptions(opts);
 
     let codec: mediasoupTypes.RtpCodecCapability | undefined;
-    if (isVideo && options?.videoCodec) {
-      const mimeType = `video/${options.videoCodec}`;
+    if (isVideo && opts.videoCodec) {
+      const mimeType = `video/${opts.videoCodec}`;
       codec = this.transportManager.device.recvRtpCapabilities.codecs?.find(
         (c) => c.mimeType.toLowerCase() === mimeType,
       );
@@ -281,7 +348,7 @@ export class LocalParticipant extends Participant {
           try {
             const req: TrackPublishRequest = {
               clientTrackId,
-              name: options?.name ?? localTrack.mediaStreamTrack.label,
+              name: opts.name ?? localTrack.mediaStreamTrack.label,
               kind: localTrack.kind,
               rtpParameters: params.rtpParameters,
               source: localTrack.source,
@@ -312,7 +379,7 @@ export class LocalParticipant extends Participant {
       encodings,
       codecOptions,
       codec,
-      stopTracks: options?.stopTrackOnUnpublish ?? false,
+      stopTracks: opts.stopTrackOnUnpublish ?? false,
       disableTrackOnPause: true,
       appData: { clientTrackId, source: localTrack.source },
     });
@@ -321,17 +388,27 @@ export class LocalParticipant extends Participant {
     localTrack.sid = trackSid;
     localTrack.producer = producer;
 
+    // Apply degradation preference for video tracks
+    if (isVideo && localTrack instanceof LocalVideoTrack) {
+      const dp = opts.degradationPreference ??
+        getDefaultDegradationPreference(localTrack.source, localTrack.constraints ?? undefined);
+      localTrack.setDegradationPreference(dp).catch((err) => {
+        log.warn('Failed to set degradation preference', err);
+      });
+    }
+
     this.producers.set(trackSid, producer);
 
     const publication = new LocalTrackPublication({
       trackSid,
-      trackName: options?.name ?? localTrack.mediaStreamTrack.label,
+      trackName: opts.name ?? localTrack.mediaStreamTrack.label,
       kind: localTrack.kind,
       source: localTrack.source,
       track: localTrack,
       muted: localTrack.isMuted,
       producer,
       rpc: this.rpc,
+      options: opts,
     });
 
     this.addTrackPublicationToMaps(publication);
@@ -701,12 +778,18 @@ export class LocalParticipant extends Participant {
   private buildCodecOptions(options?: TrackPublishOptions): PublishCodecOptions | undefined {
     const explicit = options?.codecOptions;
     const dtx = options?.dtx;
-    const bitrate = options?.audioBitrate;
-    if (!explicit && dtx === undefined && bitrate === undefined) return undefined;
+    const red = options?.red;
+    const bitrate = options?.audioPreset?.maxBitrate ?? options?.audioBitrate;
+    const stereo = options?.forceStereo;
+    if (!explicit && dtx === undefined && red === undefined && bitrate === undefined && stereo === undefined) {
+      return undefined;
+    }
     return {
       ...explicit,
       ...(dtx !== undefined && { opusDtx: dtx }),
+      ...(red !== undefined && { opusFec: red }),
       ...(bitrate !== undefined && { opusMaxAverageBitrate: bitrate }),
+      ...(stereo !== undefined && { opusStereo: stereo }),
     };
   }
 
@@ -749,11 +832,17 @@ export class LocalParticipant extends Participant {
   }): Promise<LocalTrack[]> {
     const tracks: LocalTrack[] = [];
     if (options?.audio !== false) {
-      const audioOptions = typeof options?.audio === 'object' ? options.audio : undefined;
+      const audioOptions: AudioCaptureOptions | undefined =
+        typeof options?.audio === 'object'
+          ? { ...this.roomOptions?.audioCaptureDefaults, ...options.audio }
+          : this.roomOptions?.audioCaptureDefaults;
       tracks.push(await createLocalAudioTrack(audioOptions));
     }
     if (options?.video !== false) {
-      const videoOptions = typeof options?.video === 'object' ? options.video : undefined;
+      const videoOptions: VideoCaptureOptions | undefined =
+        typeof options?.video === 'object'
+          ? { ...this.roomOptions?.videoCaptureDefaults, ...options.video }
+          : this.roomOptions?.videoCaptureDefaults;
       tracks.push(await createLocalVideoTrack(videoOptions));
     }
     return tracks;

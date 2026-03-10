@@ -47,6 +47,7 @@ import {
   ConnectionQuality,
 } from './protocol/types';
 import type { RoomOptions, ReconnectPolicy } from './track/options';
+import { defaultAudioCaptureOptions, defaultVideoCaptureOptions } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { Track } from './track/Track';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
@@ -187,8 +188,23 @@ export class Room extends TypedEventEmitter<RoomEvents> {
   constructor(options?: RoomOptions) {
     super();
     this._options = options ?? {};
+    this._options.audioCaptureDefaults = {
+      ...defaultAudioCaptureOptions,
+      ...options?.audioCaptureDefaults,
+    };
+    this._options.videoCaptureDefaults = {
+      ...defaultVideoCaptureOptions,
+      ...options?.videoCaptureDefaults,
+    };
+    this._options.publishDefaults = {
+      ...options?.publishDefaults,
+    };
     this.reconnectPolicy = options?.reconnectPolicy ?? {};
-    this._reconnectPolicy = new DefaultReconnectPolicy(this.reconnectPolicy.maxRetries);
+    this._reconnectPolicy = new DefaultReconnectPolicy(
+      this.reconnectPolicy.maxRetries,
+      this.reconnectPolicy.initialDelay,
+      this.reconnectPolicy.maxDelay,
+    );
     this.signalClient = new SignalClient();
   }
 
@@ -928,6 +944,7 @@ export class Room extends TypedEventEmitter<RoomEvents> {
     } else {
       this._localParticipant.updateFromInfo(jr.participant);
     }
+    this._localParticipant.roomOptions = this._options;
     this._localParticipant.init(this.rpcClient, this.transportManager);
     this.dataStreamReceiver.setLocalIdentity(jr.participant.identity);
   }

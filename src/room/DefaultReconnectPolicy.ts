@@ -17,12 +17,14 @@ export interface ReconnectContext {
  */
 export class DefaultReconnectPolicy {
   private readonly maxRetries: number;
-  private readonly baseDelay = 300;
-  private readonly maxDelay = 10_000;
+  private readonly baseDelay: number;
+  private readonly maxDelay: number;
   private retries = 0;
 
-  constructor(maxRetries = 10) {
+  constructor(maxRetries = 10, baseDelay = 300, maxDelay = 10_000) {
     this.maxRetries = maxRetries;
+    this.baseDelay = baseDelay;
+    this.maxDelay = maxDelay;
   }
 
   /**
