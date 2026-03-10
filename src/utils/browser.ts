@@ -36,9 +36,37 @@ export interface AudioAnalyserOptions {
   useFloat?: boolean;
 }
 
+/** Whether we are running in a web (browser/Electron) environment as opposed to Node/React Native. */
+export function isWeb(): boolean {
+  return typeof document !== 'undefined';
+}
+
+/** Whether the current device is a mobile device. */
+export function isMobile(): boolean {
+  if (!isWeb()) return false;
+  return (
+    (navigator as any).userAgentData?.mobile ??
+    /Tablet|iPad|Mobile|Android|BlackBerry/.test(navigator.userAgent)
+  );
+}
+
 export function isFireFox(): boolean {
   if (typeof navigator === 'undefined') return false;
   return navigator.userAgent.includes('Firefox/');
+}
+
+export function isSafari(): boolean {
+  return getBrowser()?.name === 'Safari';
+}
+
+export function isSafariBased(): boolean {
+  const b = getBrowser();
+  return b?.name === 'Safari' || b?.os === 'iOS';
+}
+
+export function isChromiumBased(): boolean {
+  const b = getBrowser();
+  return !!b && b.name === 'Chrome' && b.os !== 'iOS';
 }
 
 /** Check whether the current browser supports the minimum WebRTC features. */
@@ -76,11 +104,28 @@ export function supportsVP9(): boolean {
 
 /** Whether the browser supports `HTMLMediaElement.setSinkId` for audio output device selection. */
 export function supportsAudioOutputSelection(): boolean {
-  if (typeof HTMLMediaElement === 'undefined') return false;
+  if (!isWeb() || typeof HTMLMediaElement === 'undefined') return false;
+  if (isSafariBased()) return false;
   return typeof (HTMLMediaElement.prototype as any).setSinkId === 'function';
 }
 
-/** Detect the current browser name and version. */
+/**
+ * Compare two version strings (e.g. "17.4.1" vs "17.2").
+ * Returns negative if a < b, 0 if equal, positive if a > b.
+ */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const va = pa[i] ?? 0;
+    const vb = pb[i] ?? 0;
+    if (va !== vb) return va - vb;
+  }
+  return 0;
+}
+
+/** Detect the current browser name, version, and OS. */
 export function getBrowser(): BrowserDetails {
   if (typeof navigator === 'undefined') {
     return {
@@ -94,19 +139,42 @@ export function getBrowser(): BrowserDetails {
   const ua = navigator.userAgent;
   let name = 'unknown';
   let version = '';
+  let os: string | undefined;
+  let osVersion: string | undefined;
 
-  if (ua.includes('Firefox/')) {
+  // Detect OS
+  if (/iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && 'ontouchend' in document)) {
+    os = 'iOS';
+    const match = ua.match(/OS (\d+[_.\d]*)/);
+    if (match) osVersion = match[1].replace(/_/g, '.');
+  } else if (ua.includes('Android')) {
+    os = 'Android';
+    const match = ua.match(/Android ([\d.]+)/);
+    if (match) osVersion = match[1];
+  } else if (ua.includes('Mac OS X')) {
+    os = 'macOS';
+    const match = ua.match(/Mac OS X ([\d_]+)/);
+    if (match) osVersion = match[1].replace(/_/g, '.');
+  } else if (ua.includes('Windows')) {
+    os = 'Windows';
+  } else if (ua.includes('Linux')) {
+    os = 'Linux';
+  }
+
+  // Detect browser — order matters: Firefox first, then Chrome (which also
+  // matches Edge/Opera), then Safari last.
+  if (/firefox|fxios/i.test(ua)) {
     name = 'Firefox';
-    version = ua.split('Firefox/')[1]?.split(' ')[0] ?? '';
-  } else if (ua.includes('Edg/')) {
-    name = 'Edge';
-    version = ua.split('Edg/')[1]?.split(' ')[0] ?? '';
-  } else if (ua.includes('Chrome/')) {
+    const match = ua.match(/(?:Firefox|FxiOS)\/([\d.]+)/);
+    version = match?.[1] ?? '';
+  } else if (/chrom|crios|crmo/i.test(ua)) {
     name = 'Chrome';
-    version = ua.split('Chrome/')[1]?.split(' ')[0] ?? '';
-  } else if (ua.includes('Safari/') && !ua.includes('Chrome')) {
+    const match = ua.match(/(?:Chrome|CriOS|Chromium)\/([\d.]+)/);
+    version = match?.[1] ?? '';
+  } else if (/safari|applewebkit/i.test(ua)) {
     name = 'Safari';
-    version = ua.split('Version/')[1]?.split(' ')[0] ?? '';
+    const match = ua.match(/Version\/([\d.]+)/);
+    version = match?.[1] ?? '';
   }
 
   const supportsInsertableStreams =
@@ -115,7 +183,7 @@ export function getBrowser(): BrowserDetails {
 
   const supportsTransceiver = typeof RTCPeerConnection.prototype.addTransceiver === 'function';
 
-  return { name, version, supportsInsertableStreams, supportsTransceiver };
+  return { name, version, os, osVersion, supportsInsertableStreams, supportsTransceiver };
 }
 
 /**
@@ -138,7 +206,7 @@ export function getEmptyAudioStreamTrack(): MediaStreamTrack {
  * Create a black video `MediaStreamTrack`. Useful as a placeholder when
  * a real track isn't available.
  */
-export function getEmptyVideoStreamTrack(width = 2, height = 2): MediaStreamTrack {
+export function getEmptyVideoStreamTrack(width = 16, height = 16): MediaStreamTrack {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

@@ -148,12 +148,19 @@ export { TypedEventEmitter } from './utils/events';
 
 // Utilities — Browser
 export {
+  isWeb,
+  isMobile,
+  isFireFox,
+  isSafari,
+  isSafariBased,
+  isChromiumBased,
   isBrowserSupported,
   supportsAdaptiveStream,
   supportsDynacast,
   supportsAV1,
   supportsVP9,
   supportsAudioOutputSelection,
+  compareVersions,
   getBrowser,
   getEmptyAudioStreamTrack,
   getEmptyVideoStreamTrack,

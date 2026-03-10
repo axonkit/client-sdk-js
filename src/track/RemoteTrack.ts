@@ -63,7 +63,7 @@ export class RemoteTrack extends Track {
   }
 
   /**
-   * Gets the RTCStatsReport for the underlying mediasoup Consumer.
+   * Gets the RTCStatsReport for the underlying RTP receiver.
    */
   async getRTCStatsReport(): Promise<RTCStatsReport | undefined> {
     if (!this.consumer) return undefined;

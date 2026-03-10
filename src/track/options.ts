@@ -370,13 +370,12 @@ export type ScalabilityMode =
   | 'L3T3_KEY';
 
 // ---------------------------------------------------------------------------
-// Publish codec options (mediasoup ProducerCodecOptions)
+// Publish codec options
 // ---------------------------------------------------------------------------
 
 /**
- * Codec-specific options forwarded to the mediasoup producer.
- *
- * These map directly to the SDP `fmtp` parameters for the selected codec.
+ * Codec-specific options that map to SDP `fmtp` parameters for the
+ * selected codec.
  */
 export interface PublishCodecOptions {
   opusStereo?: boolean;
@@ -519,7 +518,8 @@ export interface TrackPublishDefaults {
   stopMicTrackOnMute?: boolean;
 
   /**
-   * Codec-specific options forwarded to the underlying mediasoup producer.
+   * Codec-specific options (SDP `fmtp` parameters) forwarded to the
+   * underlying transport layer.
    *
    * @see {@link PublishCodecOptions}
    */
@@ -683,8 +683,11 @@ export interface RoomOptions {
   reconnectPolicy?: ReconnectPolicy;
 
   /**
-   * Disconnect from the room when the user navigates away from the page
-   * (via the `beforeunload` event).
+   * Disconnect from the room when the user navigates away from the page.
+   *
+   * When enabled (default), the SDK listens for `beforeunload` and
+   * `pagehide` events to trigger a disconnect. A `freeze` event listener
+   * is always registered in web environments regardless of this setting.
    *
    * @defaultValue `true`
    */
@@ -692,13 +695,14 @@ export interface RoomOptions {
 
   /**
    * Room name sent in the JoinRequest for server-side routing and room
-   * creation.
+   * creation. Must match the `room` claim in the JWT token (if present).
    */
   roomName?: string;
 
   /**
    * Room metadata (e.g. meeting topic) sent in the JoinRequest when the
-   * room is first created.
+   * room is auto-created. Only takes effect for the first participant
+   * that causes the room to be created. Maximum size: 64 KB.
    */
   metadata?: string;
 }

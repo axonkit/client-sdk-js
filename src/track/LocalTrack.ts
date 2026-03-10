@@ -185,7 +185,7 @@ export class LocalTrack extends Track {
   }
 
   /**
-   * Gets the RTCStatsReport for the underlying mediasoup Producer.
+   * Gets the RTCStatsReport for the underlying RTP sender.
    */
   async getRTCStatsReport(): Promise<RTCStatsReport | undefined> {
     if (!this._producer) return undefined;
