@@ -19,7 +19,6 @@ export class DefaultReconnectPolicy {
   private readonly maxRetries: number;
   private readonly baseDelay: number;
   private readonly maxDelay: number;
-  private retries = 0;
 
   constructor(maxRetries = 10, baseDelay = 300, maxDelay = 10_000) {
     this.maxRetries = maxRetries;
@@ -35,7 +34,6 @@ export class DefaultReconnectPolicy {
     if (context.retryCount > this.maxRetries) {
       return null;
     }
-    this.retries = context.retryCount;
 
     const delay = Math.min(this.baseDelay * Math.pow(2, context.retryCount - 1), this.maxDelay);
     const jitter = delay * 0.5 * Math.random();
@@ -43,6 +41,6 @@ export class DefaultReconnectPolicy {
   }
 
   reset(): void {
-    this.retries = 0;
+    // no internal state to reset; kept for API compatibility
   }
 }

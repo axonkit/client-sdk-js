@@ -33,7 +33,6 @@ export type RPCEvents = {
 
 export class RPCClient extends TypedEmitter<RPCEvents> {
   private sendDC: mediasoupTypes.DataProducer | null = null;
-  private recvDC: mediasoupTypes.DataConsumer | null = null;
   private pending = new Map<string, PendingRequest>();
   private requestHandlers = new Map<string, RequestHandler>();
   private notificationHandlers = new Map<string, NotificationHandler>();
@@ -42,7 +41,6 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
 
   bind(sendDC: mediasoupTypes.DataProducer, recvDC: mediasoupTypes.DataConsumer): void {
     this.sendDC = sendDC;
-    this.recvDC = recvDC;
 
     recvDC.on('message', (data: ArrayBuffer | string) => {
       this.handleMessage(data);
@@ -133,7 +131,6 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
     this.requestHandlers.clear();
     this.notificationHandlers.clear();
     this.sendDC = null;
-    this.recvDC = null;
   }
 
   private handleMessage(data: ArrayBuffer | string): void {

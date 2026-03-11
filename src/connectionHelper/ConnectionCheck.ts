@@ -26,12 +26,10 @@ type ConnectionCheckEvents = {
  */
 export class ConnectionCheck extends TypedEmitter<ConnectionCheckEvents> {
   private url: string;
-  private token: string;
 
-  constructor(url: string, token: string) {
+  constructor(url: string) {
     super();
     this.url = url;
-    this.token = token;
   }
 
   async checkSignalConnectivity(): Promise<CheckInfo> {
@@ -39,7 +37,7 @@ export class ConnectionCheck extends TypedEmitter<ConnectionCheckEvents> {
       'signal-connectivity',
       'Check signalling server reachability',
       async () => {
-        const resp = await fetch(this.url.replace(/^ws/, 'http'), {
+        const resp = await fetch(this.url, {
           method: 'HEAD',
           signal: AbortSignal.timeout(5000),
         });

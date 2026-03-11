@@ -28,7 +28,7 @@ export default {
     },
   ],
   plugins: [
-    resolve({ browser: true }),
+    resolve({ browser: true, preferBuiltins: false }),
     commonjs(),
     typescript({ tsconfig: './tsconfig.json', declaration: true, declarationDir: 'dist' }),
     terser(),
