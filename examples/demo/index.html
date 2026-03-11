@@ -1,411 +1,260 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AxonKit Client SDK Demo</title>
-    <style>
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: #0f172a;
-        color: #e2e8f0;
-        min-height: 100vh;
-      }
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 24px;
-      }
-      h1 {
-        font-size: 1.75rem;
-        font-weight: 600;
-        margin-bottom: 24px;
-        color: #f1f5f9;
-      }
-      .controls {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        align-items: flex-end;
-        margin-bottom: 24px;
-        padding: 20px;
-        background: #1e293b;
-        border-radius: 12px;
-      }
-      .field {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .field label {
-        font-size: 0.8rem;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-      }
-      .field input {
-        padding: 8px 12px;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        background: #0f172a;
-        color: #e2e8f0;
-        font-size: 0.9rem;
-        outline: none;
-      }
-      .field input:focus {
-        border-color: #6366f1;
-      }
-      button {
-        padding: 8px 20px;
-        border: none;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background 0.15s;
-      }
-      .btn-primary {
-        background: #6366f1;
-        color: #fff;
-      }
-      .btn-primary:hover {
-        background: #4f46e5;
-      }
-      .btn-danger {
-        background: #ef4444;
-        color: #fff;
-      }
-      .btn-danger:hover {
-        background: #dc2626;
-      }
-      .btn-secondary {
-        background: #334155;
-        color: #e2e8f0;
-      }
-      .btn-secondary:hover {
-        background: #475569;
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      .media-actions {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 24px;
-      }
-      .video-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-        gap: 16px;
-      }
-      .video-tile {
-        background: #1e293b;
-        border-radius: 12px;
-        overflow: hidden;
-        position: relative;
-      }
-      .video-tile video {
-        width: 100%;
-        aspect-ratio: 16/9;
-        object-fit: cover;
-        display: block;
-        background: #000;
-      }
-      .video-tile .label {
-        position: absolute;
-        bottom: 8px;
-        left: 8px;
-        padding: 4px 10px;
-        background: rgba(0, 0, 0, 0.6);
-        border-radius: 6px;
-        font-size: 0.8rem;
-      }
-      #log {
-        margin-top: 24px;
-        padding: 16px;
-        background: #1e293b;
-        border-radius: 12px;
-        max-height: 200px;
-        overflow-y: auto;
-        font-family: 'SF Mono', 'Fira Code', monospace;
-        font-size: 0.8rem;
-        line-height: 1.6;
-        color: #94a3b8;
-      }
-      #log .info {
-        color: #6366f1;
-      }
-      #log .error {
-        color: #ef4444;
-      }
-      #log .warn {
-        color: #eab308;
-      }
-    </style>
+    <title>AxonKit Sample App</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css"
+      integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
-      <h1>AxonKit Client SDK Demo</h1>
+      <div class="row">
+        <div class="col-md-8">
+          <h2>AxonKit Sample App</h2>
+          <br />
+          <div id="connect-area">
+            <div>
+              <b>AxonKit URL</b>
+            </div>
+            <div>
+              <input type="text" class="form-control" id="url" value="ws://localhost:7990" />
+            </div>
+            <div>
+              <b>Token</b>
+            </div>
+            <div>
+              <input type="text" class="form-control" id="token" />
+            </div>
+          </div>
 
-      <div class="controls">
-        <div class="field">
-          <label>Server URL</label>
-          <input type="text" id="url" value="http://localhost:7990" />
+          <!-- connect options -->
+          <div id="options-area">
+            <div>
+              <input type="checkbox" class="form-check-input" id="publish-option" checked />
+              <label for="publish-option" class="form-check-label"> Publish </label>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="simulcast" checked />
+              <label for="simulcast" class="form-check-label"> Simulcast </label>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="dynacast" checked />
+              <label for="dynacast" class="form-check-label"> Dynacast </label>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="adaptive-stream" checked />
+              <label for="adaptive-stream" class="form-check-label"> AdaptiveStream </label>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="force-turn" />
+              <label for="force-turn" class="form-check-label"> Force TURN </label>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="auto-subscribe" checked />
+              <label for="auto-subscribe" class="form-check-label"> Auto Subscribe </label>
+            </div>
+            <div>
+              <select id="preferred-codec" class="custom-select" style="width: auto"></select>
+            </div>
+            <div>
+              <select
+                id="scalability-mode"
+                class="custom-select"
+                style="width: auto"
+                disabled="true"
+              ></select>
+            </div>
+            <div>
+              <input type="checkbox" class="form-check-input" id="multicodec-simulcast" />
+              <label for="multicodec-simulcast" class="form-check-label"
+                >MultiCodec-Simulcast
+              </label>
+            </div>
+          </div>
+
+          <!-- actions -->
+          <div id="actions-area">
+            <div>
+              <button
+                id="connect-button"
+                class="btn btn-primary mt-1"
+                type="button"
+                onclick="appActions.connectWithFormInput()"
+              >
+                Connect
+              </button>
+            </div>
+            <div>
+              <button
+                id="toggle-audio-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.toggleAudio()"
+              >
+                Enable Mic
+              </button>
+              <button
+                id="toggle-video-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.toggleVideo()"
+              >
+                Enable Camera
+              </button>
+              <button
+                id="flip-video-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.flipVideo()"
+              >
+                Flip Camera
+              </button>
+              <button
+                id="share-screen-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.shareScreen()"
+              >
+                Share Screen
+              </button>
+              <input id="file" type="file" />
+              <button onclick="appActions.sendFile()">Send file</button>
+              <button
+                id="disconnect-room-button"
+                class="btn btn-danger mt-1"
+                disabled
+                type="button"
+                onclick="appActions.disconnectRoom()"
+              >
+                Disconnect
+              </button>
+              <button
+                id="start-audio-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.startAudio()"
+              >
+                Start Audio
+              </button>
+              <select
+                id="preferred-quality"
+                class="custom-select"
+                style="width: auto"
+                onchange="appActions.handlePreferredQuality(event)"
+              >
+                <option value="" selected>PreferredQuality</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+              <select
+                id="preferred-fps"
+                class="custom-select"
+                style="width: auto"
+                onchange="appActions.handlePreferredFPS(event)"
+              >
+                <option value="" selected>PreferredFPS</option>
+                <option value="30">30</option>
+                <option value="15">15</option>
+                <option value="8">8</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="inputs-area">
+            <div>
+              <select
+                id="video-input"
+                class="custom-select"
+                onchange="appActions.handleDeviceSelected(event)"
+              >
+                <option selected>Video Input (default)</option>
+              </select>
+            </div>
+            <div>
+              <select
+                id="audio-input"
+                class="custom-select"
+                onchange="appActions.handleDeviceSelected(event)"
+              >
+                <option selected>Audio Input (default)</option>
+              </select>
+            </div>
+            <div>
+              <select
+                id="audio-output"
+                class="custom-select"
+                onchange="appActions.handleDeviceSelected(event)"
+              >
+                <option selected>Audio Output (default)</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <div class="field">
-          <label>Token</label>
-          <input type="text" id="token" placeholder="JWT token" />
+        <div class="col-md-4">
+          <h3>Chat</h3>
+          <div id="chat-area">
+            <textarea class="form-control" id="chat" rows="9"></textarea>
+            <div id="chat-input-area">
+              <div>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="entry"
+                  placeholder="Type your message here"
+                />
+              </div>
+              <div>
+                <button
+                  id="send-button"
+                  class="btn btn-primary"
+                  type="button"
+                  onclick="appActions.enterText()"
+                  disabled
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+            <button
+              id="cancel-chat-receive-button"
+              class="btn btn-outline-secondary btn-sm"
+              type="button"
+              onclick="appActions.cancelChatReceive()"
+              style="display: none;"
+            >
+              Cancel current receive
+            </button>
+          </div>
         </div>
-        <div class="field">
-          <label>Display Name</label>
-          <input type="text" id="displayName" value="John Doe" />
-        </div>
-        <button class="btn-primary" id="btnConnect">Connect</button>
-        <button class="btn-danger" id="btnDisconnect" disabled>Disconnect</button>
       </div>
 
-      <div class="media-actions">
-        <button class="btn-secondary" id="btnCamera" disabled>Enable Camera</button>
-        <button class="btn-secondary" id="btnMic" disabled>Enable Mic</button>
-        <button class="btn-secondary" id="btnScreen" disabled>Share Screen</button>
+      <div id="screenshare-area">
+        <div>
+          <span id="screenshare-info"> </span>
+          <span id="screenshare-resolution"> </span>
+        </div>
+        <video id="screenshare-video" autoplay playsinline></video>
       </div>
 
-      <div class="video-grid" id="videoGrid"></div>
+      <div id="participants-area"></div>
 
-      <div id="log"></div>
+      <div id="log-area">
+        <textarea id="log"></textarea>
+      </div>
     </div>
-
-    <script type="module">
-      import {
-        Room,
-        RoomState,
-        RoomEvent,
-        ParticipantEvent,
-        setLogLevel,
-        LogLevel,
-        TrackSource,
-      } from '../../dist/axonkit-client.esm.js';
-
-      setLogLevel(LogLevel.DEBUG);
-
-      const room = new Room({ roomName: 'testroom', autoSubscribe: true, dynacast: true });
-      const $ = (id) => document.getElementById(id);
-
-      let cameraEnabled = false;
-      let micEnabled = false;
-      let screenEnabled = false;
-
-      function logMsg(text, cls = 'info') {
-        const el = $('log');
-        const line = document.createElement('div');
-        line.className = cls;
-        line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
-        el.appendChild(line);
-        el.scrollTop = el.scrollHeight;
-      }
-
-      function addVideoTile(id, label) {
-        // Prevent duplicate tiles
-        if ($(`tile-${id}`)) return $(`video-${id}`);
-
-        const tile = document.createElement('div');
-        tile.className = 'video-tile';
-        tile.id = `tile-${id}`;
-        tile.innerHTML = `<video id="video-${id}" autoplay playsinline></video><div class="label">${label}</div>`;
-        $('videoGrid').appendChild(tile);
-        return tile.querySelector('video');
-      }
-
-      function removeVideoTile(id) {
-        const tile = $(`tile-${id}`);
-        if (tile) tile.remove();
-      }
-
-      // Local Participant Event Handlers
-      function handleLocalTrackPublished(pub) {
-        if (pub.kind === 'video') {
-          const el = addVideoTile(`local-${pub.source}`, `You (${pub.source})`);
-          pub.track.attach(el);
-        }
-      }
-
-      function handleLocalTrackUnpublished(pub) {
-        if (pub.kind === 'video') {
-          removeVideoTile(`local-${pub.source}`);
-        }
-
-        // Update state variables and buttons when track is unpublished (e.g. via browser UI stop)
-        if (pub.source === 'camera') {
-          cameraEnabled = false;
-          $('btnCamera').textContent = 'Enable Camera';
-        } else if (pub.source === 'microphone') {
-          micEnabled = false;
-          $('btnMic').textContent = 'Enable Mic';
-        } else if (pub.source === 'screen_share') {
-          screenEnabled = false;
-          $('btnScreen').textContent = 'Share Screen';
-        }
-      }
-
-      $('btnConnect').onclick = async () => {
-        const url = $('url').value;
-        const token = $('token').value;
-        const displayName = $('displayName').value;
-
-        if (!url) return logMsg('Please enter URL', 'warn');
-        if (!displayName) return logMsg('Please enter Display Name', 'warn');
-
-        try {
-          logMsg('Connecting...');
-          await room.connect(url, token);
-          if (displayName) {
-            await room.localParticipant.setName(displayName);
-          }
-          logMsg(`Connected to room: ${room.name}`);
-          $('btnConnect').disabled = true;
-          $('btnDisconnect').disabled = false;
-          $('btnCamera').disabled = false;
-          $('btnMic').disabled = false;
-          $('btnScreen').disabled = false;
-        } catch (err) {
-          logMsg(`Connection failed: ${err.message}`, 'error');
-        }
-      };
-
-      $('btnDisconnect').onclick = async () => {
-        await room.disconnect();
-      };
-
-      $('btnCamera').onclick = async () => {
-        const btn = $('btnCamera');
-        const targetState = !cameraEnabled;
-        btn.disabled = true;
-
-        try {
-          await room.localParticipant.setCameraEnabled(targetState);
-          cameraEnabled = targetState;
-          btn.textContent = cameraEnabled ? 'Disable Camera' : 'Enable Camera';
-        } catch (err) {
-          logMsg(`Camera error: ${err.message}`, 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      };
-
-      $('btnMic').onclick = async () => {
-        const btn = $('btnMic');
-        const targetState = !micEnabled;
-        btn.disabled = true;
-
-        try {
-          await room.localParticipant.setMicrophoneEnabled(targetState);
-          micEnabled = targetState;
-          btn.textContent = micEnabled ? 'Disable Mic' : 'Enable Mic';
-          logMsg(micEnabled ? 'Mic enabled' : 'Mic disabled');
-        } catch (err) {
-          logMsg(`Mic error: ${err.message}`, 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      };
-
-      $('btnScreen').onclick = async () => {
-        const btn = $('btnScreen');
-        const targetState = !screenEnabled;
-        btn.disabled = true;
-
-        try {
-          await room.localParticipant.setScreenShareEnabled(targetState);
-          screenEnabled = targetState;
-          btn.textContent = screenEnabled ? 'Stop Sharing' : 'Share Screen';
-        } catch (err) {
-          logMsg(`Screen share error: ${err.message}`, 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      };
-
-      room.on(RoomEvent.Connected, () => {
-        logMsg('Room connected');
-
-        if (room.localParticipant) {
-          room.localParticipant.off(ParticipantEvent.TrackPublished, handleLocalTrackPublished);
-          room.localParticipant.off(ParticipantEvent.TrackUnpublished, handleLocalTrackUnpublished);
-
-          room.localParticipant.on(ParticipantEvent.TrackPublished, handleLocalTrackPublished);
-          room.localParticipant.on(ParticipantEvent.TrackUnpublished, handleLocalTrackUnpublished);
-        }
-      });
-
-      room.on(RoomEvent.Disconnected, (reason) => {
-        logMsg(`Disconnected: ${reason ?? 'unknown'}`, 'warn');
-        $('btnConnect').disabled = false;
-        $('btnDisconnect').disabled = true;
-        $('btnCamera').disabled = true;
-        $('btnMic').disabled = true;
-        $('btnScreen').disabled = true;
-        $('videoGrid').innerHTML = '';
-
-        cameraEnabled = false;
-        micEnabled = false;
-        screenEnabled = false;
-        $('btnCamera').textContent = 'Enable Camera';
-        $('btnMic').textContent = 'Enable Mic';
-        $('btnScreen').textContent = 'Share Screen';
-      });
-
-      room.on(RoomEvent.Reconnecting, () => logMsg('Reconnecting...', 'warn'));
-      room.on(RoomEvent.Reconnected, () => logMsg('Reconnected!'));
-
-      room.on(RoomEvent.ParticipantJoined, (p) => {
-        logMsg(`Participant joined: ${p.identity}`);
-      });
-
-      room.on(RoomEvent.ParticipantLeft, (p) => {
-        logMsg(`Participant left: ${p.identity}`);
-        for (const pub of p.getTrackPublications()) {
-          if (pub.kind === 'video') removeVideoTile(pub.trackSid);
-        }
-      });
-
-      room.on(RoomEvent.ParticipantNameChanged, (name, p) => {
-        logMsg(`Participant ${p.identity} changed name to: ${name}`);
-      });
-
-      room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-        logMsg(`Track subscribed: ${track.kind} (${pub.source}) from ${participant.identity}`);
-        if (track.kind === 'video') {
-          const label = `${participant.identity ?? participant.sid} (${pub.source})`;
-          const el = addVideoTile(pub.trackSid, label);
-          track.attach(el);
-        } else if (track.kind === 'audio') {
-          const el = track.attach();
-          el.play().catch(() => {});
-        }
-      });
-
-      room.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
-        logMsg(`Track unsubscribed: ${track.kind} (${pub.source}) from ${participant.identity}`);
-        track.detach();
-        if (track.kind === 'video') {
-          removeVideoTile(pub.trackSid);
-        }
-      });
-
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-        const active = speakers.filter((s) => s.active).map((s) => s.participantSid);
-        if (active.length > 0) {
-          logMsg(`Active speakers: ${active.join(', ')}`);
-        }
-      });
-    </script>
+    <script src="./demo.ts" type="module"></script>
   </body>
 </html>

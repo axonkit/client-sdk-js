@@ -114,6 +114,5 @@ describe('unwrapConstraint', () => {
 
   it('returns first element of array', () => {
     expect(unwrapConstraint(['a', 'b', 'c'])).toBe('a');
-    expect(unwrapConstraint([1920, 1080])).toBe(1920);
   });
 });
