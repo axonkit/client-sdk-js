@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { BackupCodecPolicy, isBackupVideoCodec } from './track/options';
+import { BackupCodecPolicy, isBackupVideoCodec } from '../track/options';
 import type {
   TrackPublishRequest,
   PublishBackupTrackRequest,
   PublishBackupTrackResponse,
   SubscribedCodecInfo,
   TrackSubscribedQualityChangedNotification,
-} from './protocol/types';
-import { VideoQuality } from './protocol/types';
-import { resolveBackupCodec } from './participant/LocalParticipant';
-import type { TrackPublishOptions } from './track/options';
+} from '../protocol/types';
+import { VideoQuality } from '../protocol/types';
+import { resolveBackupCodec } from '../participant/LocalParticipant';
+import type { TrackPublishOptions } from '../track/options';
 
 // ---------------------------------------------------------------------------
 // BackupCodecPolicy enum
