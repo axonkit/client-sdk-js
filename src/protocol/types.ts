@@ -456,6 +456,8 @@ export interface UpdateSubscriptionPermissionsRequest {
 export interface SubscriptionCreateRequest {
   subscriptionSid: string;
   trackSid: string;
+  trackName: string;
+  trackSource: TrackSource;
   publisherSid: string;
   kind: TrackKind;
   rtpParameters: mediasoupTypes.RtpParameters;

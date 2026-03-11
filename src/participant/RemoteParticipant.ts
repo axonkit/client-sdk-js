@@ -6,7 +6,7 @@ import { RemoteAudioTrack } from '../track/RemoteAudioTrack';
 import { RemoteVideoTrack } from '../track/RemoteVideoTrack';
 import { TransportManager } from '../transport/TransportManager';
 import { RPCClient } from '../signal/RPCClient';
-import { TrackKind, TrackSource, StreamState } from '../protocol/types';
+import { TrackKind, StreamState } from '../protocol/types';
 import type {
   ParticipantInfo,
   TrackInfo,
@@ -139,7 +139,7 @@ export class RemoteParticipant extends Participant {
     if (req.kind === TrackKind.Audio) {
       track = new RemoteAudioTrack(consumer.track);
     } else {
-      track = new RemoteVideoTrack(TrackSource.Camera, consumer.track);
+      track = new RemoteVideoTrack(req.trackSource, consumer.track);
     }
 
     track.sid = req.trackSid;
@@ -158,9 +158,9 @@ export class RemoteParticipant extends Participant {
     } else {
       pub = new RemoteTrackPublication({
         trackSid: req.trackSid,
-        trackName: req.subscriptionSid,
+        trackName: req.trackName,
         kind: req.kind,
-        source: TrackSource.Unknown,
+        source: req.trackSource,
         track,
         muted: req.trackMuted,
         consumer,
