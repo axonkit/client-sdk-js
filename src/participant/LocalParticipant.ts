@@ -18,11 +18,14 @@ import { TrackKind, TrackSource } from '../protocol/types';
 import type {
   TrackPublishRequest,
   TrackPublishResponse,
+  PublishBackupTrackRequest,
+  PublishBackupTrackResponse,
   DataTrackPublishRequest,
   DataTrackPublishResponse,
   ParticipantTrackPermission,
   JoinGroupResponse,
   ParticipantInfo,
+  SubscribedCodecInfo,
 } from '../protocol/types';
 import type {
   TrackPublishOptions,
@@ -32,7 +35,9 @@ import type {
   ScreenShareCaptureOptions,
   PublishCodecOptions,
   RoomOptions,
+  BackupVideoCodec,
 } from '../track/options';
+import { BackupCodecPolicy, isBackupVideoCodec } from '../track/options';
 import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
@@ -413,6 +418,16 @@ export class LocalParticipant extends Participant {
               } catch {
                 // dimensions unavailable, send without them
               }
+
+              // Include codec info for backup codec support
+              if (opts.videoCodec) {
+                req.videoCodec = opts.videoCodec;
+              }
+              const resolvedBackup = resolveBackupCodec(opts);
+              if (resolvedBackup) {
+                req.backupCodec = resolvedBackup;
+                req.backupCodecPolicy = opts.backupCodecPolicy ?? BackupCodecPolicy.PREFER_REGRESSION;
+              }
             }
 
             const resp = await this.rpc.request<TrackPublishResponse>('track.publish', req);
@@ -439,6 +454,11 @@ export class LocalParticipant extends Participant {
     const trackSid = await producePromise;
     localTrack.sid = trackSid;
     localTrack.producer = producer;
+
+    // Store the published codec on video tracks for backup codec handling
+    if (isVideo && localTrack instanceof LocalVideoTrack && opts.videoCodec) {
+      localTrack.publishedCodec = opts.videoCodec;
+    }
 
     // Apply degradation preference for video tracks
     if (isVideo && localTrack instanceof LocalVideoTrack) {
@@ -970,6 +990,106 @@ export class LocalParticipant extends Participant {
     }
   }
 
+  /**
+   * Handles per-codec subscribed quality updates from the server.
+   * When the server requests a backup codec that hasn't been published yet,
+   * this triggers `publishAdditionalCodecForTrack`.
+   * @internal
+   */
+  async handleSubscribedCodecs(
+    pub: LocalTrackPublication,
+    subscribedCodecs: SubscribedCodecInfo[],
+  ): Promise<void> {
+    if (!(pub.track instanceof LocalVideoTrack)) return;
+
+    const videoTrack = pub.track as LocalVideoTrack;
+    const primaryCodec = videoTrack.publishedCodec;
+
+    for (const sc of subscribedCodecs) {
+      const codecLower = sc.codec.toLowerCase();
+      const hasEnabled = sc.qualities.some((q) => q.enabled);
+
+      if (codecLower === primaryCodec) {
+        // Update primary codec quality (dynacast)
+        await videoTrack.setDynacastQuality(sc.qualities);
+      } else if (hasEnabled && isBackupVideoCodec(codecLower)) {
+        // Backup codec requested and has enabled qualities — publish it
+        if (!videoTrack.backupProducer) {
+          log.info(`Publishing backup codec ${codecLower} for ${pub.trackSid}`);
+          await this.publishAdditionalCodecForTrack(videoTrack, codecLower as BackupVideoCodec, pub);
+        }
+      } else if (!hasEnabled && videoTrack.backupProducer) {
+        // Backup codec no longer needed — close the producer
+        log.info(`Stopping backup codec for ${pub.trackSid}`);
+        videoTrack.backupProducer.close();
+        videoTrack.backupProducer = undefined;
+      }
+    }
+  }
+
+  /**
+   * Creates a second producer for the backup codec on an already-published
+   * video track. The new producer is registered on the server via
+   * `track.publishBackup` RPC.
+   */
+  private async publishAdditionalCodecForTrack(
+    videoTrack: LocalVideoTrack,
+    backupCodec: BackupVideoCodec,
+    pub: LocalTrackPublication,
+  ): Promise<void> {
+    const sendTransport = this.transportManager.sendTransport;
+    if (!sendTransport) throw new Error('Send transport not available');
+
+    const mimeType = `video/${backupCodec}`;
+    const codec = this.transportManager.device.recvRtpCapabilities.codecs?.find(
+      (c) => c.mimeType.toLowerCase() === mimeType,
+    );
+    if (!codec) {
+      log.warn(`Backup codec ${backupCodec} not found in device capabilities`);
+      return;
+    }
+
+    const trackClone = videoTrack.mediaStreamTrack.clone();
+    const clientTrackId = generateLogId();
+
+    const producePromise = new Promise<string>((resolve, reject) => {
+      this.transportManager.registerProduceCallback(
+        clientTrackId,
+        async (params, callback, errback) => {
+          try {
+            const req: PublishBackupTrackRequest = {
+              trackSid: pub.trackSid!,
+              clientTrackId,
+              rtpParameters: params.rtpParameters,
+            };
+            const resp = await this.rpc.request<PublishBackupTrackResponse>(
+              'track.publishBackup',
+              req,
+            );
+            callback({ id: resp.backupTrackSid });
+            resolve(resp.backupTrackSid);
+          } catch (err) {
+            errback(err instanceof Error ? err : new Error(String(err)));
+            reject(err);
+          }
+        },
+      );
+    });
+
+    const backupProducer = await sendTransport.produce({
+      track: trackClone,
+      codec,
+      stopTracks: true,
+      disableTrackOnPause: true,
+      appData: { clientTrackId, source: videoTrack.source, backup: true },
+    });
+
+    const backupSid = await producePromise;
+    videoTrack.backupProducer = backupProducer;
+    videoTrack.backupCodec = backupCodec;
+    log.info(`Backup codec published: ${backupCodec}, sid=${backupSid}`);
+  }
+
   /** @internal */
   clearPublications(): void {
     this.producers.clear();
@@ -978,4 +1098,25 @@ export class LocalParticipant extends Participant {
     this.audioTrackPublications.clear();
     this.videoTrackPublications.clear();
   }
+}
+
+/**
+ * Resolves the backup codec string from publish options.
+ * Returns the backup codec name or undefined if no backup is configured.
+ */
+function resolveBackupCodec(opts: TrackPublishOptions): string | undefined {
+  if (!opts.backupCodec) return undefined;
+  if (opts.backupCodec === true) {
+    // For SVC codecs, default backup is vp8
+    if (opts.videoCodec && !isBackupVideoCodec(opts.videoCodec)) {
+      return 'vp8';
+    }
+    return undefined;
+  }
+  if (typeof opts.backupCodec === 'object') {
+    if (opts.backupCodec.codec !== opts.videoCodec) {
+      return opts.backupCodec.codec;
+    }
+  }
+  return undefined;
 }

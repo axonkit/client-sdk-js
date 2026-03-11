@@ -351,8 +351,21 @@ export interface TrackPublishRequest {
   width?: number;
   height?: number;
   muted: boolean;
+  videoCodec?: string;
+  backupCodec?: string;
+  backupCodecPolicy?: number;
   layers?: VideoLayer[];
   appData?: Record<string, unknown>;
+}
+
+export interface PublishBackupTrackRequest {
+  trackSid: string;
+  clientTrackId: string;
+  rtpParameters: mediasoupTypes.RtpParameters;
+}
+
+export interface PublishBackupTrackResponse {
+  backupTrackSid: string;
 }
 
 export interface TrackPublishResponse {
@@ -505,9 +518,15 @@ export interface SubscribedQualityInfo {
   enabled: boolean;
 }
 
+export interface SubscribedCodecInfo {
+  codec: string;
+  qualities: SubscribedQualityInfo[];
+}
+
 export interface TrackSubscribedQualityChangedNotification {
   trackSid: string;
   subscribedQualities: SubscribedQualityInfo[];
+  subscribedCodecs?: SubscribedCodecInfo[];
 }
 
 export interface TrackSubscriptionStatusChangedNotification {

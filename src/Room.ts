@@ -6,6 +6,7 @@ import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
 import { RemoteParticipant } from './participant/RemoteParticipant';
 import { Participant, type TrackPublication } from './participant/Participant';
+import { LocalTrackPublication } from './participant/LocalTrackPublication';
 import { VERSION, PROTOCOL_VERSION } from './version';
 import {
   RoomState,
@@ -1135,10 +1136,6 @@ export class Room extends TypedEmitter<RoomEvents> {
     }
   }
 
-  /**
-   * Video track only: the server reports per-layer subscriber state.
-   * When all qualities are disabled the track has no subscribers and should be paused.
-   */
   /** Video dynacast: per-layer quality change + producer pause/resume. */
   private handleSubscribedQualityChanged(body: TrackSubscribedQualityChangedNotification): void {
     if (!this._options.dynacast) return;
@@ -1146,9 +1143,18 @@ export class Room extends TypedEmitter<RoomEvents> {
     const pub = this._localParticipant.getTrackPublicationBySid(body.trackSid);
     if (!pub?.track || !(pub.track instanceof LocalVideoTrack)) return;
 
-    (pub.track as LocalVideoTrack).setDynacastQuality(body.subscribedQualities).catch((err) => {
-      log.warn('Failed to set dynacast quality', err);
-    });
+    if (body.subscribedCodecs && body.subscribedCodecs.length > 0) {
+      // Per-codec quality updates — handle backup codec lifecycle
+      this._localParticipant.handleSubscribedCodecs(pub as LocalTrackPublication, body.subscribedCodecs)
+        .catch((err) => {
+          log.warn('Failed to handle subscribed codecs', err);
+        });
+    } else {
+      // Backward compatible: quality-only updates
+      (pub.track as LocalVideoTrack).setDynacastQuality(body.subscribedQualities).catch((err) => {
+        log.warn('Failed to set dynacast quality', err);
+      });
+    }
   }
 
   private handleActiveSpeakersChanged(body: ActiveSpeakersChangedNotification): void {

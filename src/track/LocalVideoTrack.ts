@@ -1,3 +1,4 @@
+import { types as mediasoupTypes } from 'mediasoup-client';
 import { Mutex } from 'async-mutex';
 import { LocalTrack } from './LocalTrack';
 import { TrackKind, TrackSource, VideoQuality } from '../protocol/types';
@@ -18,6 +19,15 @@ export class LocalVideoTrack extends LocalTrack {
   private simulcast = false;
   private encoding?: VideoEncoding;
   private senderLock = new Mutex();
+
+  /** The codec used for the primary producer (e.g. 'vp9', 'av1'). */
+  publishedCodec?: string;
+
+  /** Secondary producer for the backup codec (e.g. VP8). */
+  backupProducer?: mediasoupTypes.Producer;
+
+  /** The backup codec name (e.g. 'vp8'). */
+  backupCodec?: string;
 
   constructor(
     mediaStreamTrack: MediaStreamTrack,
