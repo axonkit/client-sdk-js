@@ -34,6 +34,8 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
     return this._mediaStreamTrack;
   }
 
+  protected _isMuted = false;
+
   private _streamState: StreamState = StreamState.Active;
 
   attachedElements: HTMLMediaElement[] = [];
@@ -64,9 +66,11 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
 
   /**
    * Whether the track is currently muted.
+   * This reflects the publisher's intent and is independent of consumer
+   * pause state or {@link streamState}.
    */
   get isMuted(): boolean {
-    return !this.mediaStreamTrack.enabled;
+    return this._isMuted;
   }
 
   /**
@@ -185,7 +189,6 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
 
   stop(): void {
     this.stopMonitor();
-    this._mediaStreamTrack?.stop();
     this.detach();
   }
 }

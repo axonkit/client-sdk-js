@@ -33,7 +33,7 @@ import type {
   PublishCodecOptions,
   RoomOptions,
 } from '../track/options';
-import { ParticipantEvent } from '../events';
+import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 import type {
@@ -459,7 +459,6 @@ export class LocalParticipant extends Participant {
       track: localTrack,
       muted: localTrack.isMuted,
       producer,
-      rpc: this.rpc,
       options: opts,
     });
 
@@ -468,14 +467,16 @@ export class LocalParticipant extends Participant {
     localTrack.startMonitor();
     localTrack.addVisibilityListener();
 
-    producer.observer.on('pause', () => {
+    localTrack.on(TrackEvent.Muted, () => {
       publication.muted = true;
       this.emit(ParticipantEvent.TrackMuted, publication);
+      this.rpc.request('track.mute', { trackSid, muted: true }).catch(() => {});
     });
 
-    producer.observer.on('resume', () => {
+    localTrack.on(TrackEvent.Unmuted, () => {
       publication.muted = false;
       this.emit(ParticipantEvent.TrackUnmuted, publication);
+      this.rpc.request('track.mute', { trackSid, muted: false }).catch(() => {});
     });
 
     producer.observer.on('trackended', () => {
@@ -550,8 +551,15 @@ export class LocalParticipant extends Participant {
       log.warn(`Failed to unpublish track ${trackSid}`, err);
     }
 
+    const localTrack = publication?.track instanceof LocalTrack ? publication.track : undefined;
+    localTrack?.stopMonitor();
+
     producer?.close();
     this.producers.delete(trackSid);
+
+    if (localTrack) {
+      localTrack.producer = undefined;
+    }
 
     if (publication) {
       this.removeTrackPublicationFromMaps(trackSid);

@@ -114,10 +114,6 @@ export class TrackPublication {
   get isLocal(): boolean {
     return false;
   }
-
-  mute(): void {}
-
-  unmute(): void {}
 }
 
 export type ParticipantEvents = {

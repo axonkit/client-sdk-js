@@ -110,6 +110,9 @@ export class RemoteParticipant extends Participant {
 
     if (pub.track) {
       const track = pub.track as RemoteTrack;
+      if (track.subscriptionSid) {
+        this.consumers.delete(track.subscriptionSid);
+      }
       track.stop();
       this.emit(ParticipantEvent.TrackUnsubscribed, track, pub);
     }

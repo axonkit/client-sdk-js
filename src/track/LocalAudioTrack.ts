@@ -1,3 +1,4 @@
+import { Mutex } from 'async-mutex';
 import { LocalTrack } from './LocalTrack';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { getLogger } from '../utils/logger';
@@ -19,28 +20,43 @@ export class LocalAudioTrack extends LocalTrack {
    */
   private pendingRestartConstraints?: MediaTrackConstraints;
 
+  private muteLock = new Mutex();
+
   constructor(mediaStreamTrack: MediaStreamTrack, constraints?: MediaTrackConstraints) {
     super(TrackKind.Audio, mediaStreamTrack, TrackSource.Microphone, constraints);
   }
 
-  override async mute(): Promise<typeof this> {
-    await super.mute();
-    if (this.stopOnMute) {
-      this._mediaStreamTrack.stop();
+  override async mute(): Promise<void> {
+    const release = await this.muteLock.acquire();
+    try {
+      if (this.isMuted) return;
+      if (this.stopOnMute && !this.isUserProvided) {
+        this._mediaStreamTrack.stop();
+      }
+      super.mute();
+    } finally {
+      release();
     }
-    return this;
   }
 
-  override async unmute(): Promise<typeof this> {
-    if (this.pendingRestartConstraints) {
-      log.debug('applying pending device change on unmute');
-      await this.restart(this.pendingRestartConstraints);
-      this.pendingRestartConstraints = undefined;
-    } else if (this.stopOnMute && this.mediaStreamTrack.readyState === 'ended') {
-      await this.restart();
+  override async unmute(): Promise<void> {
+    const release = await this.muteLock.acquire();
+    try {
+      if (!this.isMuted) return;
+      if (this.pendingRestartConstraints) {
+        log.debug('applying pending device change on unmute');
+        await this.restart(this.pendingRestartConstraints);
+        this.pendingRestartConstraints = undefined;
+      } else if (
+        (this.stopOnMute || this._mediaStreamTrack.readyState === 'ended') &&
+        !this.isUserProvided
+      ) {
+        await this.restart();
+      }
+      super.unmute();
+    } finally {
+      release();
     }
-    await super.unmute();
-    return this;
   }
 
   async setDeviceId(deviceId: string): Promise<void> {

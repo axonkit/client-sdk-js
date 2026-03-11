@@ -180,15 +180,13 @@ export class LocalTrack extends Track {
   }
 
   /** Mute the track (disables the MediaStreamTrack). */
-  async mute(): Promise<LocalTrack> {
+  mute(): void {
     this.setTrackMuted(true);
-    return this;
   }
 
   /** Unmute the track (enables the MediaStreamTrack). */
-  async unmute(): Promise<LocalTrack> {
+  unmute(): void {
     this.setTrackMuted(false);
-    return this;
   }
 
   /**
@@ -367,20 +365,21 @@ export class LocalTrack extends Track {
       this._processor = undefined;
     }
     this.destroyProcessorElement();
+    this._mediaStreamTrack?.stop();
     super.stop();
     log.debug(`Track ${this.sid ?? 'unknown'} stopped`);
   }
 
   protected setTrackMuted(muted: boolean): void {
-    if (this.isMuted === muted) return;
+    if (this._isMuted === muted) return;
+    this._isMuted = muted;
+    this._mediaStreamTrack.enabled = !muted;
     if (this._producer) {
       if (muted) {
         this._producer.pause();
       } else {
         this._producer.resume();
       }
-    } else {
-      this._mediaStreamTrack.enabled = !muted;
     }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }

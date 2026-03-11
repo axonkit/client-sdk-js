@@ -1,7 +1,6 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
 import { TrackPublication } from './Participant';
 import type { LocalTrack } from '../track/LocalTrack';
-import type { RPCClient } from '../signal/RPCClient';
 import type { TrackSource, TrackInfo } from '../protocol/types';
 import { AudioTrackFeature, TrackKind } from '../protocol/types';
 import type { TrackPublishOptions } from '../track/options';
@@ -9,7 +8,6 @@ import type { TrackPublishOptions } from '../track/options';
 export class LocalTrackPublication extends TrackPublication {
   /** @internal */
   producer?: mediasoupTypes.Producer;
-  private rpc?: RPCClient;
 
   /** The options used when publishing the track. */
   options?: TrackPublishOptions;
@@ -24,12 +22,10 @@ export class LocalTrackPublication extends TrackPublication {
     muted: boolean;
     info?: TrackInfo;
     producer?: mediasoupTypes.Producer;
-    rpc?: RPCClient;
     options?: TrackPublishOptions;
   }) {
     super(init);
     this.producer = init.producer;
-    this.rpc = init.rpc;
     this.options = init.options;
   }
 
@@ -51,19 +47,15 @@ export class LocalTrackPublication extends TrackPublication {
   }
 
   /** Mute the track associated with this publication. */
-  override async mute(): Promise<LocalTrack | undefined> {
+  mute(): void {
     const localTrack = this.track as LocalTrack | undefined;
     localTrack?.mute();
-    this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: true }).catch(() => {});
-    return localTrack;
   }
 
   /** Unmute the track associated with this publication. */
-  override async unmute(): Promise<LocalTrack | undefined> {
+  unmute(): void {
     const localTrack = this.track as LocalTrack | undefined;
     localTrack?.unmute();
-    this.rpc?.request('track.mute', { trackSid: this.trackSid, muted: false }).catch(() => {});
-    return localTrack;
   }
 
   /**

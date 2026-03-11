@@ -35,21 +35,30 @@ export class RemoteTrack extends Track {
 
   /** @internal */
   setMuted(muted: boolean): void {
-    if (this.isMuted === muted) return;
-    if (!this.consumer) return;
-    if (muted) {
-      this.consumer.pause();
+    if (this._isMuted === muted) return;
+    this._isMuted = muted;
+    if (this.consumer) {
+      if (muted) {
+        this.consumer.pause();
+      } else {
+        this.consumer.resume();
+      }
     } else {
-      this.consumer.resume();
+      this.mediaStreamTrack.enabled = !muted;
     }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
   }
 
-  setMediaStreamTrack(track: MediaStreamTrack): void {
-    this._mediaStreamTrack = track;
-    for (const el of this.attachedElements) {
-      const stream = new MediaStream([track]);
-      el.srcObject = stream;
+  /**
+   * Stop the remote track.
+   */
+  override stop(): void {
+    this.stopMonitor();
+    this.detach();
+    if (this.consumer) {
+      this.consumer.close();
+    } else {
+      this._mediaStreamTrack.enabled = false;
     }
   }
 
@@ -108,7 +117,7 @@ export class RemoteTrack extends Track {
    * with the current RTP timestamp and browser timestamp, useful for
    * lip-sync and cross-track synchronization.
    */
-  registerTimeSyncUpdate(): void {
+  private registerTimeSyncUpdate(): void {
     const receiver = this.consumer?.rtpReceiver;
     if (!receiver) return;
     const loop = () => {
