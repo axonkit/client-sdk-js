@@ -1049,7 +1049,6 @@ export class LocalParticipant extends Participant {
       return;
     }
 
-    const trackClone = videoTrack.mediaStreamTrack.clone();
     const clientTrackId = generateLogId();
 
     const producePromise = new Promise<string>((resolve, reject) => {
@@ -1076,11 +1075,16 @@ export class LocalParticipant extends Participant {
       );
     });
 
+    // Reuse the same MediaStreamTrack instead of cloning — React Native
+    // (react-native-webrtc) does not support MediaStreamTrack.clone().
+    // Multiple mediasoup producers can share a single track because each
+    // gets its own RTCRtpTransceiver. stopTracks must be false so closing
+    // the backup producer doesn't stop the shared track.
     const backupProducer = await sendTransport.produce({
-      track: trackClone,
+      track: videoTrack.mediaStreamTrack,
       codec,
-      stopTracks: true,
-      disableTrackOnPause: true,
+      stopTracks: false,
+      disableTrackOnPause: false,
       appData: { clientTrackId, source: videoTrack.source, backup: true },
     });
 
