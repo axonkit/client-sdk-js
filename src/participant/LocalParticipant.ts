@@ -1104,7 +1104,7 @@ export class LocalParticipant extends Participant {
  * Resolves the backup codec string from publish options.
  * Returns the backup codec name or undefined if no backup is configured.
  */
-function resolveBackupCodec(opts: TrackPublishOptions): string | undefined {
+export function resolveBackupCodec(opts: TrackPublishOptions): string | undefined {
   if (!opts.backupCodec) return undefined;
   if (opts.backupCodec === true) {
     // For SVC codecs, default backup is vp8

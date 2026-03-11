@@ -23,7 +23,7 @@ export class LocalVideoTrack extends LocalTrack {
   /** The codec used for the primary producer (e.g. 'vp9', 'av1'). */
   publishedCodec?: string;
 
-  /** Secondary producer for the backup codec (e.g. VP8). */
+  /** @internal Secondary producer for the backup codec (e.g. VP8). */
   backupProducer?: mediasoupTypes.Producer;
 
   /** The backup codec name (e.g. 'vp8'). */
