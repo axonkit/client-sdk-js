@@ -57,7 +57,12 @@ import { StatsCollector } from './stats/StatsCollector';
 import { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
 import { isWeb } from './utils/browser';
 import { DataStreamReceiver } from './data-stream/DataStreamManager';
-import type { ChatMessage, RpcInvocationData, TextStreamHandler, ByteStreamHandler } from './types';
+import type { Message, RpcInvocationData, TextStreamHandler, ByteStreamHandler } from './types';
+import type {
+  MessageDeletedNotification,
+  StateUpdatedNotification,
+  StateDeletedNotification,
+} from './protocol/types';
 
 /**
  * Options passed when connecting to a room.
@@ -131,7 +136,19 @@ export type RoomEvents = {
   ) => void;
   [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.VideoPlaybackStatusChanged]: (canPlayback: boolean) => void;
-  [RoomEvent.ChatMessage]: (message: ChatMessage, participant?: Participant) => void;
+  [RoomEvent.ChatMessage]: (message: Message, participant?: Participant) => void;
+  [RoomEvent.MessageDeleted]: (ids: string[], type?: string) => void;
+  [RoomEvent.StateUpdated]: (
+    key: string,
+    value: string,
+    participantSid?: string,
+    participantIdentity?: string,
+  ) => void;
+  [RoomEvent.StateDeleted]: (
+    key: string,
+    participantSid?: string,
+    participantIdentity?: string,
+  ) => void;
   [RoomEvent.TrackStreamStateChanged]: (
     publication: TrackPublication,
     streamState: StreamState,
@@ -164,6 +181,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   private _localParticipant!: LocalParticipant;
   private _remoteParticipants = new Map<string, RemoteParticipant>();
   private _groups = new Map<string, GroupInfo>();
+  private _sharedState = new Map<string, string>();
 
   private pingInterval?: ReturnType<typeof setInterval>;
   private pingTimeoutTimer?: ReturnType<typeof setTimeout>;
@@ -242,6 +260,11 @@ export class Room extends TypedEmitter<RoomEvents> {
   /** All active groups (breakout rooms) in this room. */
   get groups(): ReadonlyMap<string, GroupInfo> {
     return this._groups;
+  }
+
+  /** Room-level shared state KV (for collaboration features like whiteboard, shared documents). */
+  get sharedState(): ReadonlyMap<string, string> {
+    return this._sharedState;
   }
 
   /**
@@ -518,6 +541,13 @@ export class Room extends TypedEmitter<RoomEvents> {
         }
       }
 
+      if (readyResp.sharedState) {
+        this._sharedState.clear();
+        for (const [k, v] of Object.entries(readyResp.sharedState)) {
+          this._sharedState.set(k, v);
+        }
+      }
+
       this.setState(RoomState.Connected);
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this.startStatsCollector(joinResponse.statsInterval);
@@ -660,10 +690,18 @@ export class Room extends TypedEmitter<RoomEvents> {
         }
       }
 
-      // Replay chat messages missed during disconnect.
+      // Replay messages missed during disconnect.
       if (readyResp.messages) {
         for (const m of readyResp.messages) {
-          this.handleChatMessage(m);
+          this.handleMessage(m);
+        }
+      }
+
+      // Sync shared state from server.
+      if (readyResp.sharedState) {
+        this._sharedState.clear();
+        for (const [k, v] of Object.entries(readyResp.sharedState)) {
+          this._sharedState.set(k, v);
         }
       }
 
@@ -1025,8 +1063,22 @@ export class Room extends TypedEmitter<RoomEvents> {
       },
     );
 
-    this.rpcClient.onNotification('chat.message', (body: any) => {
-      this.handleChatMessage(body);
+    this.rpcClient.onNotification('message.received', (body: any) => {
+      this.handleMessage(body);
+    });
+
+    this.rpcClient.onNotification('message.deleted', (body: MessageDeletedNotification) => {
+      this.emit(RoomEvent.MessageDeleted, body.ids, body.type);
+    });
+
+    this.rpcClient.onNotification('state.updated', (body: StateUpdatedNotification) => {
+      this._sharedState.set(body.key, body.value);
+      this.emit(RoomEvent.StateUpdated, body.key, body.value, body.participantSid, body.participantIdentity);
+    });
+
+    this.rpcClient.onNotification('state.deleted', (body: StateDeletedNotification) => {
+      this._sharedState.delete(body.key);
+      this.emit(RoomEvent.StateDeleted, body.key, body.participantSid, body.participantIdentity);
     });
 
     this.rpcClient.onNotification('rpc.invoke', (body: any) => {
@@ -1184,12 +1236,14 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.emit(RoomEvent.ActiveSpeakersChanged, activeSpeakers);
   }
 
-  private handleChatMessage(body: any): void {
-    const msg: ChatMessage = {
+  private handleMessage(body: any): void {
+    const msg: Message = {
       id: body.id,
+      type: body.type,
       message: body.message,
       timestamp: body.timestamp,
       editTimestamp: body.editTimestamp,
+      transient: body.transient,
       attachedFiles: body.attachedFiles,
     };
 
@@ -1323,7 +1377,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._localParticipant.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, this._localParticipant);
     });
-    this._localParticipant.on(ParticipantEvent.ChatMessage, (msg: ChatMessage) => {
+    this._localParticipant.on(ParticipantEvent.ChatMessage, (msg: Message) => {
       const ts = msg.editTimestamp ?? msg.timestamp;
       if (ts > this._lastMessageTimestamp) {
         this._lastMessageTimestamp = ts;

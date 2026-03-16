@@ -42,7 +42,7 @@ import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';
 import { generateLogId } from '../utils/id';
 import type {
-  ChatMessage,
+  Message,
   SendTextOptions,
   StreamTextOptions,
   StreamBytesOptions,
@@ -701,20 +701,25 @@ export class LocalParticipant extends Participant {
       .catch(() => {});
   }
 
-  // --- Chat Messages ---
+  // --- Messages (chat, whiteboard, document, etc.) ---
 
   /**
-   * Send a chat message to all participants in the room.
-   * @param text - The message text.
-   * @param options - Optional settings such as `topic`, `destinationIdentities`, or `attributes`.
+   * Send a message to all participants in the room.
+   * @param text - The message text / payload.
+   * @param options - Optional settings such as `type`, `transient`, `topic`, etc.
    */
-  async sendChatMessage(text: string, options?: SendTextOptions): Promise<ChatMessage> {
-    const msg: ChatMessage = {
+  async sendMessage(
+    text: string,
+    options?: SendTextOptions & { type?: string; transient?: boolean },
+  ): Promise<Message> {
+    const msg: Message = {
       id: crypto.randomUUID(),
+      type: options?.type,
       message: text,
       timestamp: Date.now(),
+      transient: options?.transient,
     };
-    this.rpc.notify('chat.message', {
+    this.rpc.notify('message.send', {
       ...msg,
       destinationIdentities: options?.destinationIdentities,
       topic: options?.topic,
@@ -725,17 +730,60 @@ export class LocalParticipant extends Participant {
   }
 
   /**
-   * Edit a previously sent chat message.
+   * Edit a previously sent message.
    */
-  async editChatMessage(editText: string, originalMessage: ChatMessage): Promise<ChatMessage> {
-    const msg: ChatMessage = {
+  async editMessage(editText: string, originalMessage: Message): Promise<Message> {
+    const msg: Message = {
       ...originalMessage,
       message: editText,
       editTimestamp: Date.now(),
     };
-    this.rpc.notify('chat.message', msg);
+    this.rpc.notify('message.send', msg);
     this.emit(ParticipantEvent.ChatMessage, msg);
     return msg;
+  }
+
+  /**
+   * Delete a single message by ID.
+   */
+  async deleteMessage(id: string): Promise<void> {
+    await this.rpc.request('message.delete', { id });
+  }
+
+  /**
+   * Delete all messages of a given type.
+   */
+  async deleteMessagesByType(type: string): Promise<void> {
+    await this.rpc.request('message.deleteByType', { type });
+  }
+
+  // --- Room Shared State ---
+
+  /**
+   * Update a key in the room's shared state.
+   */
+  async updateRoomState(key: string, value: string): Promise<void> {
+    await this.rpc.request('state.update', { key, value });
+  }
+
+  /**
+   * Delete a key from the room's shared state.
+   */
+  async deleteRoomState(key: string): Promise<void> {
+    await this.rpc.request('state.delete', { key });
+  }
+
+  /** @deprecated Use {@link sendMessage} instead. */
+  async sendChatMessage(
+    text: string,
+    options?: SendTextOptions,
+  ): Promise<Message> {
+    return this.sendMessage(text, options);
+  }
+
+  /** @deprecated Use {@link editMessage} instead. */
+  async editChatMessage(editText: string, originalMessage: Message): Promise<Message> {
+    return this.editMessage(editText, originalMessage);
   }
 
   // --- Data Streams ---

@@ -18,7 +18,7 @@ import type { LocalVideoTrack } from '../track/LocalVideoTrack';
 import type { RemoteAudioTrack } from '../track/RemoteAudioTrack';
 import type { RemoteVideoTrack } from '../track/RemoteVideoTrack';
 import { ParticipantEvent } from '../events';
-import type { ChatMessage } from '../types';
+import type { Message } from '../types';
 
 /**
  * Subscription status for a remote track publication.
@@ -142,7 +142,7 @@ export type ParticipantEvents = {
     streamState: StreamState,
   ) => void;
   [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
-  [ParticipantEvent.ChatMessage]: (message: ChatMessage) => void;
+  [ParticipantEvent.ChatMessage]: (message: Message) => void;
 };
 
 export abstract class Participant extends TypedEmitter<ParticipantEvents> {

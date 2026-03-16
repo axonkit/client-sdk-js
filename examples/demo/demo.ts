@@ -1,5 +1,5 @@
 import type {
-  ChatMessage,
+  Message,
   ConnectOptions,
   RoomOptions,
   ScalabilityMode,
@@ -486,7 +486,7 @@ const appActions = {
 
 // ----------------------------- event handlers ----------------------------- //
 
-function handleChatMessage(msg: ChatMessage, participant?: Participant) {
+function handleChatMessage(msg: Message, participant?: Participant) {
   state.chatMessages.set(msg.id, { text: msg.message, participant });
 
   const chatEl = <HTMLTextAreaElement>$('chat');

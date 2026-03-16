@@ -159,6 +159,7 @@ export interface RoomInfo {
   numParticipants?: number;
   numPublishers?: number;
   activeRecording?: boolean;
+  sharedState?: Record<string, string>;
 }
 
 export enum ParticipantKind {
@@ -317,14 +318,38 @@ export interface ReadyResponse {
   otherParticipants: ParticipantInfo[];
   room?: RoomInfo;
   groups?: GroupInfo[];
-  messages?: ChatMessageInfo[];
+  messages?: MessageInfo[];
+  sharedState?: Record<string, string>;
 }
 
-export interface ChatMessageInfo {
+export interface MessageInfo {
   id: string;
+  type?: string;
   message: string;
   timestamp: number;
   editTimestamp?: number;
+  transient?: boolean;
+  participantSid?: string;
+  participantIdentity?: string;
+}
+
+/** @deprecated Use {@link MessageInfo} instead. */
+export type ChatMessageInfo = MessageInfo;
+
+export interface MessageDeletedNotification {
+  ids: string[];
+  type?: string;
+}
+
+export interface StateUpdatedNotification {
+  key: string;
+  value: string;
+  participantSid?: string;
+  participantIdentity?: string;
+}
+
+export interface StateDeletedNotification {
+  key: string;
   participantSid?: string;
   participantIdentity?: string;
 }

@@ -116,8 +116,9 @@ export { AxonError, ConnectionError, TimeoutError, ErrorCode } from './protocol/
 // RPC
 export { RpcError, MAX_RPC_PAYLOAD_BYTES } from './rpc';
 
-// Types — Chat, Data Stream, RPC
+// Types — Message, Data Stream, RPC
 export type {
+  Message,
   ChatMessage,
   SendTextOptions,
   StreamTextOptions,

@@ -1,18 +1,25 @@
 /**
- * A chat message exchanged between participants.
+ * A message exchanged between participants (chat, whiteboard, document, etc.).
  */
-export interface ChatMessage {
+export interface Message {
   /** Unique message identifier. */
   id: string;
+  /** Message type: "text", "whiteboard", "document", "image", "video", "audio", "file", "system", etc. */
+  type?: string;
   /** Unix timestamp in milliseconds when the message was sent. */
   timestamp: number;
   /** The text content of the message. */
   message: string;
   /** Unix timestamp in milliseconds of the last edit, if edited. */
   editTimestamp?: number;
+  /** If true, the message is not persisted (e.g. mouse coordinates). */
+  transient?: boolean;
   /** Optional file attachment identifiers. */
   attachedFiles?: string[];
 }
+
+/** @deprecated Use {@link Message} instead. */
+export type ChatMessage = Message;
 
 /**
  * Options when sending a text message.

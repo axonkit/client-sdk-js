@@ -202,11 +202,32 @@ export enum RoomEvent {
   AudioPlaybackStatusChanged = 'audioPlaybackStatusChanged',
 
   /**
-   * A chat message has been received or sent.
+   * A message has been received or sent (chat, whiteboard, document, etc.).
    *
-   * args: `(message: ChatMessage, participant?: Participant)`
+   * args: `(message: Message, participant?: Participant)`
    */
   ChatMessage = 'chatMessage',
+
+  /**
+   * Messages have been deleted.
+   *
+   * args: `(ids: string[], type?: string)`
+   */
+  MessageDeleted = 'messageDeleted',
+
+  /**
+   * A room shared state key has been updated.
+   *
+   * args: `(key: string, value: string, participantSid?: string, participantIdentity?: string)`
+   */
+  StateUpdated = 'stateUpdated',
+
+  /**
+   * A room shared state key has been deleted.
+   *
+   * args: `(key: string, participantSid?: string, participantIdentity?: string)`
+   */
+  StateDeleted = 'stateDeleted',
 
   /**
    * The server has pushed a new refresh token. Applications should persist
