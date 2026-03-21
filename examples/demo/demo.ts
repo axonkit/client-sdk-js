@@ -52,15 +52,17 @@ let startTime: number;
 let streamReaderAbortController: AbortController | undefined;
 
 const searchParams = new URLSearchParams(window.location.search);
-const storedUrl = searchParams.get('url') ?? 'ws://localhost:7990';
+const storedUrl = searchParams.get('url') ?? 'http://localhost:7990';
+const storedRoomName = searchParams.get('room') ?? 'test';
 const storedToken = searchParams.get('token') ?? '';
 (<HTMLInputElement>$('url')).value = storedUrl;
+(<HTMLInputElement>$('room-name')).value = storedRoomName;
 (<HTMLInputElement>$('token')).value = storedToken;
 
-function updateSearchParams(url: string, token: string) {
-  const params = new URLSearchParams({ url, token });
-  window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
-}
+// function updateSearchParams(url: string, token: string) {
+//   const params = new URLSearchParams({ url, token });
+//   window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+// }
 
 const appActions = {
   sendFile: async () => {
@@ -76,6 +78,7 @@ const appActions = {
 
   connectWithFormInput: async () => {
     const url = (<HTMLInputElement>$('url')).value;
+    const roomName = (<HTMLInputElement>$('room-name')).value.trim() || 'test';
     const token = (<HTMLInputElement>$('token')).value;
     const simulcast = (<HTMLInputElement>$('simulcast')).checked;
     const dynacast = (<HTMLInputElement>$('dynacast')).checked;
@@ -90,9 +93,10 @@ const appActions = {
       backupCodecPolicy = BackupCodecPolicy.SIMULCAST;
     }
 
-    updateSearchParams(url, token);
+    // updateSearchParams(url, token);
 
     const roomOpts: RoomOptions = {
+      roomName,
       adaptiveStream,
       dynacast,
       publishDefaults: {
@@ -410,10 +414,7 @@ const appActions = {
       const lp = currentRoom.localParticipant;
       const message = textField.value;
       lp.sendText(message, { topic: 'lk.chat' }).then(({ id }) => {
-        handleChatMessage(
-          { id, timestamp: Date.now(), message },
-          lp,
-        );
+        handleChatMessage({ id, timestamp: Date.now(), message }, lp);
       });
       textField.value = '';
     }
@@ -705,8 +706,9 @@ function renderScreenShare(room: Room) {
     return;
   }
   let participant: Participant | undefined;
-  let screenSharePub: TrackPublication | undefined =
-    room.localParticipant.getTrackPublication(TrackSource.ScreenShare);
+  let screenSharePub: TrackPublication | undefined = room.localParticipant.getTrackPublication(
+    TrackSource.ScreenShare,
+  );
   let screenShareAudioPub: RemoteTrackPublication | undefined;
 
   if (!screenSharePub) {
@@ -898,9 +900,27 @@ function populateSupportedCodecs() {
 function populateScalabilityModes() {
   const modeSelect = $('scalability-mode');
   const modes: string[] = [
-    'L1T1', 'L1T2', 'L1T3',
-    'L2T1', 'L2T1h', 'L2T1_KEY', 'L2T2', 'L2T2h', 'L2T2_KEY', 'L2T3', 'L2T3h', 'L2T3_KEY',
-    'L3T1', 'L3T1h', 'L3T1_KEY', 'L3T2', 'L3T2h', 'L3T2_KEY', 'L3T3', 'L3T3h', 'L3T3_KEY',
+    'L1T1',
+    'L1T2',
+    'L1T3',
+    'L2T1',
+    'L2T1h',
+    'L2T1_KEY',
+    'L2T2',
+    'L2T2h',
+    'L2T2_KEY',
+    'L2T3',
+    'L2T3h',
+    'L2T3_KEY',
+    'L3T1',
+    'L3T1h',
+    'L3T1_KEY',
+    'L3T2',
+    'L3T2h',
+    'L3T2_KEY',
+    'L3T3',
+    'L3T3h',
+    'L3T3_KEY',
   ];
   let n = document.createElement('option');
   n.value = '';

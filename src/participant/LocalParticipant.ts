@@ -129,7 +129,11 @@ export class LocalParticipant extends Participant {
           ...captureOptions,
         };
         const track = await createLocalVideoTrack(mergedCapture);
-        return await this.publishTrack(track, { ...publishOptions, source: TrackSource.Camera });
+        return await this.publishTrack(track, {
+          ...publishOptions,
+          source: TrackSource.Camera,
+          stopTrackOnUnpublish: true,
+        });
       } catch (e) {
         this._lastCameraError = e instanceof Error ? e : new Error(String(e));
         throw e;
@@ -158,6 +162,7 @@ export class LocalParticipant extends Participant {
         return await this.publishTrack(track, {
           ...publishOptions,
           source: TrackSource.Microphone,
+          stopTrackOnUnpublish: true,
         });
       } catch (e) {
         this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
@@ -181,7 +186,11 @@ export class LocalParticipant extends Participant {
       const tracks = await createLocalScreenTracks(captureOptions);
       let pub: TrackPublication | undefined;
       for (const t of tracks) {
-        pub = await this.publishTrack(t, { ...publishOptions, source: t.source });
+        pub = await this.publishTrack(t, {
+          ...publishOptions,
+          source: t.source,
+          stopTrackOnUnpublish: true,
+        });
       }
       return pub;
     } else {
