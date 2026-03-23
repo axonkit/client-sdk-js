@@ -75,8 +75,6 @@ describe('MediaDeviceFailure.getFailure', () => {
     expect(
       MediaDeviceFailure.getFailure({ name: 'SyntaxError', message: 'bad constraints' }),
     ).toBeUndefined();
-    expect(
-      MediaDeviceFailure.getFailure(new Error('something unexpected')),
-    ).toBeUndefined();
+    expect(MediaDeviceFailure.getFailure(new Error('something unexpected'))).toBeUndefined();
   });
 });

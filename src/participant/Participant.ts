@@ -225,7 +225,8 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
       permissions.canPublishData !== this.permissions?.canPublishData ||
       permissions.hidden !== this.permissions?.hidden ||
       permissions.recorder !== this.permissions?.recorder ||
-      (permissions.canPublishSources?.length ?? 0) !== (this.permissions?.canPublishSources?.length ?? 0) ||
+      (permissions.canPublishSources?.length ?? 0) !==
+        (this.permissions?.canPublishSources?.length ?? 0) ||
       (permissions.canPublishSources ?? []).some(
         (value, index) => value !== this.permissions?.canPublishSources?.[index],
       );

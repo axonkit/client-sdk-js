@@ -106,7 +106,9 @@ describe('getDefaultDegradationPreference', () => {
 
   it('returns maintain-resolution for >= 1080p constraints', () => {
     expect(
-      getDefaultDegradationPreference(TrackSource.Camera, { height: 1080 } as MediaTrackConstraints),
+      getDefaultDegradationPreference(TrackSource.Camera, {
+        height: 1080,
+      } as MediaTrackConstraints),
     ).toBe('maintain-resolution');
   });
 

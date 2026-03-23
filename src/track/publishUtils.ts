@@ -1,10 +1,5 @@
 import type { TrackPublishOptions, VideoCodec, VideoEncoding } from './options';
-import {
-  VideoPreset,
-  VideoPresets,
-  VideoPresets43,
-  ScreenSharePresets,
-} from './options';
+import { VideoPreset, VideoPresets, VideoPresets43, ScreenSharePresets } from './options';
 import { TrackSource } from '../protocol/types';
 import { getLogger } from '../utils/logger';
 import {
@@ -105,10 +100,7 @@ export function determineAppropriateEncoding(
   return encoding;
 }
 
-function defaultSimulcastLayers(
-  isScreenShare: boolean,
-  original: VideoPreset,
-): VideoPreset[] {
+function defaultSimulcastLayers(isScreenShare: boolean, original: VideoPreset): VideoPreset[] {
   if (isScreenShare) {
     return computeDefaultScreenShareSimulcastPresets(original);
   }
@@ -261,8 +253,7 @@ export function computeVideoEncodings(
       defaultSimulcastLayers(isScreenShare, original);
   } else {
     presets =
-      sortPresets(options?.videoSimulcastLayers) ??
-      defaultSimulcastLayers(isScreenShare, original);
+      sortPresets(options?.videoSimulcastLayers) ?? defaultSimulcastLayers(isScreenShare, original);
   }
 
   let midPreset: VideoPreset | undefined;
@@ -283,9 +274,11 @@ export function computeVideoEncodings(
   return encodingsFromPresets(width, height, [original]);
 }
 
-function parseScalabilityMode(
-  mode: string,
-): { spatial: number; temporal: number; suffix?: 'h' | '_KEY' | '_KEY_SHIFT' } {
+function parseScalabilityMode(mode: string): {
+  spatial: number;
+  temporal: number;
+  suffix?: 'h' | '_KEY' | '_KEY_SHIFT';
+} {
   const results = mode.match(/^L(\d)T(\d)(h|_KEY|_KEY_SHIFT)?$/);
   if (!results) {
     throw new Error(`invalid scalability mode: ${mode}`);

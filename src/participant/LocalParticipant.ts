@@ -10,7 +10,11 @@ import {
   createLocalVideoTrack,
   createLocalScreenTracks,
 } from '../track/create';
-import { computeVideoEncodings, isSVCCodec, getDefaultDegradationPreference } from '../track/publishUtils';
+import {
+  computeVideoEncodings,
+  isSVCCodec,
+  getDefaultDegradationPreference,
+} from '../track/publishUtils';
 import { supportsAV1, supportsVP9, isFireFox } from '../utils/browser';
 import { RPCClient } from '../signal/RPCClient';
 import { TransportManager } from '../transport/TransportManager';
@@ -298,10 +302,14 @@ export class LocalParticipant extends Participant {
 
       if (isStereo) {
         if (opts.dtx === undefined) {
-          log.info('Opus DTX will be disabled for stereo tracks by default. Enable explicitly to override.');
+          log.info(
+            'Opus DTX will be disabled for stereo tracks by default. Enable explicitly to override.',
+          );
         }
         if (opts.red === undefined) {
-          log.info('Opus RED will be disabled for stereo tracks by default. Enable explicitly to override.');
+          log.info(
+            'Opus RED will be disabled for stereo tracks by default. Enable explicitly to override.',
+          );
         }
         opts.dtx ??= false;
         opts.red ??= false;
@@ -361,22 +369,19 @@ export class LocalParticipant extends Participant {
         dims = { width: defaultRes.width, height: defaultRes.height };
         log.warn('could not determine track dimensions, using defaults', dims);
       }
-      encodings = computeVideoEncodings(
-        isScreenShare,
-        dims.width,
-        dims.height,
-        opts,
-      );
+      encodings = computeVideoEncodings(isScreenShare, dims.width, dims.height, opts);
     } else if (isAudio) {
       // Audio encoding from audioPreset or audioBitrate
       const audioBitrate = opts.audioPreset?.maxBitrate ?? opts.audioBitrate;
       const audioPriority = opts.audioPreset?.priority ?? 'high';
       if (audioBitrate !== undefined) {
-        encodings = [{
-          maxBitrate: audioBitrate,
-          priority: audioPriority,
-          networkPriority: audioPriority,
-        }];
+        encodings = [
+          {
+            maxBitrate: audioBitrate,
+            priority: audioPriority,
+            networkPriority: audioPriority,
+          },
+        ];
       }
     }
 
@@ -435,7 +440,8 @@ export class LocalParticipant extends Participant {
               const resolvedBackup = resolveBackupCodec(opts);
               if (resolvedBackup) {
                 req.backupCodec = resolvedBackup;
-                req.backupCodecPolicy = opts.backupCodecPolicy ?? BackupCodecPolicy.PREFER_REGRESSION;
+                req.backupCodecPolicy =
+                  opts.backupCodecPolicy ?? BackupCodecPolicy.PREFER_REGRESSION;
               }
             }
 
@@ -471,7 +477,8 @@ export class LocalParticipant extends Participant {
 
     // Apply degradation preference for video tracks
     if (isVideo && localTrack instanceof LocalVideoTrack) {
-      const dp = opts.degradationPreference ??
+      const dp =
+        opts.degradationPreference ??
         getDefaultDegradationPreference(localTrack.source, localTrack.constraints ?? undefined);
       localTrack.setDegradationPreference(dp).catch((err) => {
         log.warn('Failed to set degradation preference', err);
@@ -511,8 +518,7 @@ export class LocalParticipant extends Participant {
     producer.observer.on('trackended', () => {
       const isManaged =
         !localTrack.isUserProvided &&
-        (localTrack.source === TrackSource.Camera ||
-          localTrack.source === TrackSource.Microphone);
+        (localTrack.source === TrackSource.Camera || localTrack.source === TrackSource.Microphone);
 
       if (isManaged) {
         log.info(`Track ${trackSid} ended, attempting restart`);
@@ -783,10 +789,7 @@ export class LocalParticipant extends Participant {
   }
 
   /** @deprecated Use {@link sendMessage} instead. */
-  async sendChatMessage(
-    text: string,
-    options?: SendTextOptions,
-  ): Promise<Message> {
+  async sendChatMessage(text: string, options?: SendTextOptions): Promise<Message> {
     return this.sendMessage(text, options);
   }
 
@@ -935,7 +938,13 @@ export class LocalParticipant extends Participant {
     const red = options?.red;
     const bitrate = options?.audioPreset?.maxBitrate ?? options?.audioBitrate;
     const stereo = options?.forceStereo;
-    if (!explicit && dtx === undefined && red === undefined && bitrate === undefined && stereo === undefined) {
+    if (
+      !explicit &&
+      dtx === undefined &&
+      red === undefined &&
+      bitrate === undefined &&
+      stereo === undefined
+    ) {
       return undefined;
     }
     return {
@@ -1073,7 +1082,11 @@ export class LocalParticipant extends Participant {
         // Backup codec requested and has enabled qualities — publish it
         if (!videoTrack.backupProducer) {
           log.info(`Publishing backup codec ${codecLower} for ${pub.trackSid}`);
-          await this.publishAdditionalCodecForTrack(videoTrack, codecLower as BackupVideoCodec, pub);
+          await this.publishAdditionalCodecForTrack(
+            videoTrack,
+            codecLower as BackupVideoCodec,
+            pub,
+          );
         }
       } else if (!hasEnabled && videoTrack.backupProducer) {
         // Backup codec no longer needed — close the producer

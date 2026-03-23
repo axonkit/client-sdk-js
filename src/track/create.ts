@@ -121,11 +121,12 @@ export async function createLocalScreenTracks(
   if (options?.frameRate) videoConstraint.frameRate = options.frameRate;
 
   const constraints: DisplayMediaStreamOptions & Record<string, unknown> = {
-    video: options?.video === true || !options?.video
-      ? Object.keys(videoConstraint).length > 0
-        ? videoConstraint
-        : true
-      : videoConstraint,
+    video:
+      options?.video === true || !options?.video
+        ? Object.keys(videoConstraint).length > 0
+          ? videoConstraint
+          : true
+        : videoConstraint,
     audio: options?.audio
       ? typeof options.audio === 'boolean'
         ? true
@@ -145,7 +146,9 @@ export async function createLocalScreenTracks(
     constraints.suppressLocalAudioPlayback = options.suppressLocalAudioPlayback;
   }
 
-  const stream = await navigator.mediaDevices.getDisplayMedia(constraints as DisplayMediaStreamOptions);
+  const stream = await navigator.mediaDevices.getDisplayMedia(
+    constraints as DisplayMediaStreamOptions,
+  );
   const tracks: LocalTrack[] = [];
 
   for (const vt of stream.getVideoTracks()) {

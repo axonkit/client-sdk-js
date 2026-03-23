@@ -676,7 +676,7 @@ export interface RoomOptions {
    * per-track.
    */
   publishDefaults?: TrackPublishDefaults;
- 
+
   /**
    * Policy parameters for automatic reconnection.
    */

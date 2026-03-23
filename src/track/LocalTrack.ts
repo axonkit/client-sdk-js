@@ -479,9 +479,7 @@ export class LocalTrack extends Track {
       this.attachTrackToProcessorElement(this._mediaStreamTrack);
       return;
     }
-    const el = document.createElement(
-      this.kind === TrackKind.Audio ? 'audio' : 'video',
-    );
+    const el = document.createElement(this.kind === TrackKind.Audio ? 'audio' : 'video');
     el.muted = true;
     el.autoplay = true;
     if (el instanceof HTMLVideoElement) {
@@ -498,10 +496,7 @@ export class LocalTrack extends Track {
     this.processorElement = el;
   }
 
-  private attachTrackToProcessorElement(
-    track: MediaStreamTrack,
-    el?: HTMLMediaElement,
-  ): void {
+  private attachTrackToProcessorElement(track: MediaStreamTrack, el?: HTMLMediaElement): void {
     const target = el ?? this.processorElement;
     if (!target) return;
     target.srcObject = new MediaStream([track]);

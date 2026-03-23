@@ -317,9 +317,7 @@ describe('TrackSubscribedQualityChangedNotification', () => {
       ],
     };
 
-    const decoded = JSON.parse(
-      JSON.stringify(notif),
-    ) as TrackSubscribedQualityChangedNotification;
+    const decoded = JSON.parse(JSON.stringify(notif)) as TrackSubscribedQualityChangedNotification;
     expect(decoded.subscribedCodecs).toHaveLength(1);
     expect(decoded.subscribedCodecs![0].codec).toBe('av1');
     expect(decoded.subscribedCodecs![0].qualities[0].enabled).toBe(false);
@@ -331,9 +329,7 @@ describe('TrackSubscribedQualityChangedNotification', () => {
       subscribedQualities: [{ quality: VideoQuality.MEDIUM, enabled: true }],
     };
 
-    const decoded = JSON.parse(
-      JSON.stringify(notif),
-    ) as TrackSubscribedQualityChangedNotification;
+    const decoded = JSON.parse(JSON.stringify(notif)) as TrackSubscribedQualityChangedNotification;
     expect(decoded.subscribedCodecs).toBeUndefined();
   });
 });
@@ -424,9 +420,7 @@ describe('backup codec detection logic', () => {
       },
     ];
 
-    const backupEntry = subscribedCodecs.find(
-      (sc) => sc.codec.toLowerCase() !== 'vp9',
-    );
+    const backupEntry = subscribedCodecs.find((sc) => sc.codec.toLowerCase() !== 'vp9');
     expect(backupEntry).toBeDefined();
     const backupEnabled = backupEntry!.qualities.some((q) => q.enabled);
     expect(backupEnabled).toBe(false);
