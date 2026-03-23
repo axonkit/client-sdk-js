@@ -618,12 +618,17 @@ export class Room extends TypedEmitter<RoomEvents> {
     if (this._state !== RoomState.Reconnecting) return;
 
     try {
+      const fingerprints = this.transportManager.getDtlsFingerprints();
+      const hasDtlsFingerprints = fingerprints.length > 0;
+      const savedCert = this.transportManager.getCertificate();
+
       const joinRequest: JoinRequest = {
         room: { name: this._name },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
           autoSubscribe: this._options.autoSubscribe !== false,
           adaptiveStream: !!this._options.adaptiveStream,
+          dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
         },
         reconnect: true,
         participantSid: this.participantSid,
@@ -652,11 +657,14 @@ export class Room extends TypedEmitter<RoomEvents> {
 
       this.rpcClient = new RPCClient();
       this.transportManager = new TransportManager(this.signalClient);
+      if (savedCert) {
+        this.transportManager.setCertificate(savedCert);
+      }
 
       this.nodeId = jr.serverInfo.nodeId;
       this.applyJoinResponse(jr);
 
-      await this.transportManager.setup(this.url, jr, false, this._rtcConfig);
+      await this.transportManager.setup(this.url, jr, hasDtlsFingerprints, this._rtcConfig);
       this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {

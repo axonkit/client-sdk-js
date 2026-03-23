@@ -89,6 +89,23 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
     }
   }
 
+  getCertificate(): RTCCertificate | null {
+    return this.certificate;
+  }
+
+  /** Used when replacing TransportManager (full reconnect) so DTLS matches join fingerprints. */
+  setCertificate(cert: RTCCertificate | null): void {
+    this.certificate = cert;
+  }
+
+  getDtlsFingerprints(): DtlsFingerprint[] {
+    if (!this.certificate) return [];
+    return this.certificate.getFingerprints().map((fp) => ({
+      algorithm: fp.algorithm ?? '',
+      value: fp.value?.toUpperCase() ?? '',
+    }));
+  }
+
   async setup(
     url: string,
     joinResponse: JoinResponse,
