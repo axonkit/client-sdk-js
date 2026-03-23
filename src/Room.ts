@@ -670,6 +670,10 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.registerNotificationHandlers();
 
       this._localParticipant.init(this.rpcClient, this.transportManager);
+      // Full reconnect replaces TransportManager; remote participants still held the closed instance.
+      for (const [, rp] of this._remoteParticipants) {
+        rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
+      }
 
       const readyReq: ReadyRequest = {
         rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
@@ -1065,7 +1069,13 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     this.rpcClient.onNotification('state.updated', (body: StateUpdatedNotification) => {
       this._sharedState.set(body.key, body.value);
-      this.emit(RoomEvent.StateUpdated, body.key, body.value, body.participantSid, body.participantIdentity);
+      this.emit(
+        RoomEvent.StateUpdated,
+        body.key,
+        body.value,
+        body.participantSid,
+        body.participantIdentity,
+      );
     });
 
     this.rpcClient.onNotification('state.deleted', (body: StateDeletedNotification) => {
@@ -1189,7 +1199,8 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     if (body.subscribedCodecs && body.subscribedCodecs.length > 0) {
       // Per-codec quality updates — handle backup codec lifecycle
-      this._localParticipant.handleSubscribedCodecs(pub as LocalTrackPublication, body.subscribedCodecs)
+      this._localParticipant
+        .handleSubscribedCodecs(pub as LocalTrackPublication, body.subscribedCodecs)
         .catch((err) => {
           log.warn('Failed to handle subscribed codecs', err);
         });
