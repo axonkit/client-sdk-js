@@ -177,7 +177,7 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
     }
 
     const body = bodyToJSON(msg);
-    if (pending.method !== 'ping') log.debug(`RES ${pending.method} logId=${logId} status=${msg.status}`);
+    if (pending.method !== 'ping') log.debug(`RES ${pending.method} logId=${logId} status=${msg.status} body=${JSON.stringify(body)}`);
     pending.resolve(body);
   }
 
@@ -196,7 +196,7 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
 
     try {
       const reqBody = bodyToJSON(msg);
-      log.debug(`Incoming REQ ${method} logId=${msg.logId}`);
+      log.debug(`Incoming REQ ${method} logId=${msg.logId} body=${JSON.stringify(reqBody)}`);
       const result = await handler(reqBody);
       if (msg.logId) {
         this.respond(msg.logId, 200, result);
@@ -223,7 +223,7 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
 
     try {
       const body = bodyToJSON(msg);
-      log.debug(`MSG ${method} logId=${msg.logId ?? '(none)'}`);
+      log.debug(`MSG ${method} logId=${msg.logId} body=${JSON.stringify(body)}`);
       handler(body);
     } catch (err) {
       log.error(`Notification handler error for ${method}`, err);

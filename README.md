@@ -66,12 +66,11 @@ await room.disconnect();
 
 ### Room
 
-| Method                          | Description                                |
-| ------------------------------- | ------------------------------------------ |
-| `connect(url, token)`           | Connect to a room                          |
-| `disconnect()`                  | Disconnect from the room                   |
-| `prepareConnection(url, token)` | Pre-warm connection                        |
-| `startAudio()`                  | Start audio playback (for autoplay policy) |
+| Method                | Description                                |
+| --------------------- | ------------------------------------------ |
+| `connect(url, token)` | Connect to a room                          |
+| `disconnect()`        | Disconnect from the room                   |
+| `startAudio()`        | Start audio playback (for autoplay policy) |
 
 ### LocalParticipant
 

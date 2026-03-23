@@ -951,14 +951,6 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.dataStreamReceiver.unregisterByteStreamHandler(topic);
   }
 
-  // --- Prepare Connection (pre-warm) ---
-
-  async prepareConnection(url: string, token: string): Promise<void> {
-    log.info('Pre-warming connection (placeholder)');
-    this.url = url;
-    this.token = token;
-  }
-
   // --- Internal ---
 
   private applyJoinResponse(jr: JoinResponse): void {
