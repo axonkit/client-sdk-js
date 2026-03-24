@@ -72,10 +72,9 @@ export enum DisconnectReason {
 
 export enum ParticipantState {
   Joining = 0,
-  Connected = 1,
-  Joined = 2,
-  Suspended = 3,
-  Disconnected = 4,
+  Joined = 1,
+  Suspended = 2,
+  Disconnected = 3,
 }
 
 // --- Transport Params ---
@@ -192,6 +191,7 @@ export interface ParticipantInfo {
   attributes?: Record<string, string>;
   kind?: ParticipantKind;
   joinedAt?: number;
+  disconnectReason?: DisconnectReason;
   permission?: ParticipantPermission;
   groupId?: string;
   /** @internal Node that hosts this participant (used for cross-node sync). */

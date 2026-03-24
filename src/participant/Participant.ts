@@ -188,9 +188,9 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
     return this._kind === ParticipantKind.Agent;
   }
 
-  /** Whether the participant is in an active (connected / joined) state. */
+  /** Whether the participant is in an active (joined) state. */
   get isActive(): boolean {
-    return this.state === ParticipantState.Connected || this.state === ParticipantState.Joined;
+    return this.state === ParticipantState.Joined;
   }
 
   /**

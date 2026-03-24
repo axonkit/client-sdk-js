@@ -512,14 +512,14 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.registerRPCHandlers();
       this.registerNotificationHandlers();
 
-      if (this._localParticipant) {
-        this._localParticipant.state = ParticipantState.Connected;
-      }
-
       const readyReq: ReadyRequest = {
         rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
       };
       const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+
+      if (this._localParticipant) {
+        this._localParticipant.state = ParticipantState.Joined;
+      }
 
       if (readyResp.room) {
         this._roomInfo = readyResp.room;
