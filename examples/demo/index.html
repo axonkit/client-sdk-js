@@ -126,6 +126,15 @@
                 Flip Camera
               </button>
               <button
+                id="toggle-canvas-video-button"
+                class="btn btn-secondary mt-1"
+                disabled
+                type="button"
+                onclick="appActions.toggleCanvasVideo()"
+              >
+                Publish Canvas Video
+              </button>
+              <button
                 id="share-screen-button"
                 class="btn btn-secondary mt-1"
                 disabled
@@ -239,7 +248,7 @@
               class="btn btn-outline-secondary btn-sm"
               type="button"
               onclick="appActions.cancelChatReceive()"
-              style="display: none;"
+              style="display: none"
             >
               Cancel current receive
             </button>

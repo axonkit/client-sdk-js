@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable", "WebWorker"],
     "target": "ESNext",
     "module": "ESNext",
     "outDir": "build",
@@ -15,6 +16,6 @@
     "moduleResolution": "node",
     "resolveJsonModule": true
   },
-  "include": ["../../src/**/*", "demo.ts"],
+  "include": ["../../src/**/*", "demo.ts", "canvasCaptureSource.ts", "canvas-animation.worker.ts"],
   "exclude": ["**/*.test.ts", "build/**/*"]
 }

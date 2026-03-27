@@ -29,13 +29,20 @@ import {
   supportsAV1,
   supportsVP9,
   LocalParticipant,
+  LocalTrack,
 } from '../../src/index';
 import { isSVCCodec } from '../../src/track/publishUtils';
 import { supportsH265 } from '../../src/utils/browser';
+import {
+  getDemoCanvasElement,
+  startDemoCanvasWorkerAnimation,
+  stopDemoCanvasWorkerAnimation,
+} from './canvasCaptureSource';
 
 setLogLevel(LogLevel.DEBUG);
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+type CanvasVideoTrack = MediaStreamTrack;
 
 const state = {
   isFrontFacing: false,
@@ -44,8 +51,17 @@ const state = {
   defaultDevices: new Map<MediaDeviceKind, string>([['audioinput', 'default']]),
   bitrateInterval: undefined as ReturnType<typeof setInterval> | undefined,
   chatMessages: new Map<string, { text: string; participant?: Participant }>(),
+  /** When both camera and canvas are shown, which track is full-screen (default: camera). */
+  primaryVideoByIdentity: new Map<string, 'camera' | 'canvas'>(),
+  canvasVideo: {
+    track: undefined as CanvasVideoTrack | undefined,
+    supported: false,
+  },
 };
 let currentRoom: Room | undefined;
+const CANVAS_TRACK_NAME = 'demo-canvas-video';
+const CANVAS_FRAME_RATE = 30;
+const CANVAS_VIDEO_CODEC: VideoCodec = 'av1';
 
 let startTime: number;
 
@@ -102,7 +118,7 @@ const appActions = {
       publishDefaults: {
         simulcast,
         videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
-        videoCodec: preferredCodec || 'vp8',
+        videoCodec: preferredCodec || 'av1',
         dtx: true,
         red: true,
         forceStereo: false,
@@ -369,6 +385,40 @@ const appActions = {
     updateButtonsForPublishState();
   },
 
+  toggleCanvasVideo: async () => {
+    if (!currentRoom) return;
+    setButtonDisabled('toggle-canvas-video-button', true);
+    try {
+      const existingPublication = getCanvasTrackPublication(currentRoom.localParticipant);
+      if (existingPublication?.track) {
+        appendLog('stopping canvas video');
+        await currentRoom.localParticipant.unpublishTrack(existingPublication.track as LocalTrack);
+      } else {
+        const canvasTrack = getCanvasCaptureTrack();
+        const canvasCodec = getCanvasVideoCodec();
+        appendLog(`publishing canvas video with ${canvasCodec}`);
+        await currentRoom.localParticipant.publishTrack(canvasTrack, {
+          name: CANVAS_TRACK_NAME,
+          source: TrackSource.Unknown,
+          videoCodec: canvasCodec,
+          videoEncoding: {
+            maxBitrate: 1_500_000,
+            maxFramerate: CANVAS_FRAME_RATE,
+          },
+          simulcast: false,
+          backupCodec: true,
+          degradationPreference: 'maintain-framerate',
+        });
+      }
+      renderParticipant(currentRoom.localParticipant);
+      updateButtonsForPublishState();
+    } catch (error) {
+      appendLog('error toggling canvas video', error);
+    } finally {
+      setButtonDisabled('toggle-canvas-video-button', false);
+    }
+  },
+
   flipVideo: () => {
     const videoPub = currentRoom?.localParticipant.getTrackPublication(TrackSource.Camera);
     if (!videoPub) return;
@@ -527,6 +577,7 @@ function handleRoomDisconnect(reason?: DisconnectReason) {
     renderParticipant(p, true);
   });
   renderScreenShare(currentRoom);
+  state.primaryVideoByIdentity.clear();
 
   const container = $('participants-area');
   if (container) container.innerHTML = '';
@@ -557,6 +608,41 @@ function isLocal(participant: Participant): participant is LocalParticipant {
   return participant instanceof LocalParticipant;
 }
 
+function resolveParticipantInRoom(room: Room, identity: string): Participant | undefined {
+  if (room.localParticipant.identity === identity) {
+    return room.localParticipant;
+  }
+  return room.getParticipantByIdentity(identity);
+}
+
+function handleParticipantMediaClick(this: HTMLElement, ev: Event) {
+  if (!(ev.target instanceof HTMLVideoElement)) return;
+  const room = currentRoom;
+  if (!room || room.state !== RoomState.Connected) return;
+
+  const identity = this.id.startsWith('participant-') ? this.id.slice('participant-'.length) : '';
+  if (!identity) return;
+
+  const participant = resolveParticipantInRoom(room, identity);
+  if (!participant) return;
+
+  const videoPub = participant.getTrackPublication(TrackSource.Camera);
+  const canvasPub = getCanvasTrackPublication(participant);
+  const camOk =
+    videoPub && videoPub.isSubscribed && !videoPub.isMuted && Boolean(videoPub.videoTrack);
+  const canvasOk =
+    canvasPub && canvasPub.isSubscribed && !canvasPub.isMuted && Boolean(canvasPub.videoTrack);
+  if (!camOk || !canvasOk) return;
+
+  const vid = `video-${identity}`;
+  const cid = `canvas-${identity}`;
+  if (ev.target.id !== vid && ev.target.id !== cid) return;
+
+  const cur = state.primaryVideoByIdentity.get(identity) ?? 'camera';
+  state.primaryVideoByIdentity.set(identity, cur === 'camera' ? 'canvas' : 'camera');
+  renderParticipant(participant);
+}
+
 function renderParticipant(participant: Participant, remove: boolean = false) {
   const container = $('participants-area');
   if (!container) return;
@@ -566,8 +652,10 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
     div = document.createElement('div');
     div.id = `participant-${identity}`;
     div.className = 'participant';
+    div.addEventListener('click', handleParticipantMediaClick);
     div.innerHTML = `
-      <video id="video-${identity}"></video>
+      <video id="video-${identity}" class="track-camera"></video>
+      <video id="canvas-${identity}" class="track-canvas"></video>
       <audio id="audio-${identity}"></audio>
       <div class="info-bar">
         <div id="name-${identity}" class="name"></div>
@@ -598,8 +686,10 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
     };
   }
   const videoElm = <HTMLVideoElement>container.querySelector(`#video-${identity}`);
+  const canvasElm = <HTMLVideoElement>container.querySelector(`#canvas-${identity}`);
   const audioElm = <HTMLAudioElement>container.querySelector(`#audio-${identity}`);
   if (remove) {
+    state.primaryVideoByIdentity.delete(identity);
     div?.remove();
     if (videoElm) {
       videoElm.srcObject = null;
@@ -608,6 +698,10 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
     if (audioElm) {
       audioElm.srcObject = null;
       audioElm.src = '';
+    }
+    if (canvasElm) {
+      canvasElm.srcObject = null;
+      canvasElm.src = '';
     }
     return;
   }
@@ -618,7 +712,8 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
   }
   const micElm = container.querySelector(`#mic-${identity}`)!;
   const signalElm = container.querySelector(`#signal-${identity}`)!;
-  const cameraPub = participant.getTrackPublication(TrackSource.Camera);
+  const videoPub = participant.getTrackPublication(TrackSource.Camera);
+  const canvasPub = getCanvasTrackPublication(participant);
   const micPub = participant.getTrackPublication(TrackSource.Microphone);
 
   if (participant.isSpeaking) {
@@ -636,11 +731,14 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
     });
   }
 
-  const cameraEnabled = cameraPub && cameraPub.isSubscribed && !cameraPub.isMuted;
-  if (cameraEnabled) {
+  const videoEnabled = videoPub && videoPub.isSubscribed && !videoPub.isMuted;
+  if (videoEnabled) {
     if (isLocal(participant)) {
       videoElm.style.transform = 'scale(-1, 1)';
-    } else if (!cameraPub?.videoTrack?.attachedElements.includes(videoElm)) {
+    } else {
+      videoElm.style.transform = '';
+    }
+    if (!isLocal(participant) && !videoPub?.videoTrack?.attachedElements.includes(videoElm)) {
       const renderStartTime = Date.now();
       videoElm.onloadeddata = () => {
         const elapsed = Date.now() - renderStartTime;
@@ -649,21 +747,50 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
           fromJoin = Date.now() - startTime;
         }
         appendLog(
-          `RemoteVideoTrack ${cameraPub?.trackSid} (${videoElm.videoWidth}x${videoElm.videoHeight}) rendered in ${elapsed}ms`,
+          `RemoteVideoTrack ${videoPub?.trackSid} (${videoElm.videoWidth}x${videoElm.videoHeight}) rendered in ${elapsed}ms`,
           fromJoin > 0 ? `, ${fromJoin}ms from start` : '',
         );
       };
     }
-    cameraPub?.videoTrack?.attach(videoElm);
+    videoPub?.videoTrack?.attach(videoElm);
   } else {
     container.querySelector(`#size-${identity}`)!.innerHTML = '';
-    if (cameraPub?.videoTrack) {
-      cameraPub.videoTrack?.detach(videoElm);
+    videoElm.style.transform = '';
+    if (videoPub?.videoTrack) {
+      videoPub.videoTrack?.detach(videoElm);
     } else {
       videoElm.src = '';
       videoElm.srcObject = null;
     }
   }
+
+  const canvasEnabled = canvasPub && canvasPub.isSubscribed && !canvasPub.isMuted;
+  if (!canvasEnabled) {
+    state.primaryVideoByIdentity.delete(identity);
+  }
+  if (canvasEnabled) {
+    canvasElm.style.display = 'block';
+    canvasPub?.videoTrack?.attach(canvasElm);
+  } else {
+    canvasElm.style.display = 'none';
+    if (canvasPub?.videoTrack) {
+      canvasPub.videoTrack?.detach(canvasElm);
+    } else {
+      canvasElm.srcObject = null;
+      canvasElm.src = '';
+    }
+  }
+
+  const bothVideo = Boolean(videoEnabled && canvasEnabled);
+  if (bothVideo) {
+    videoElm.classList.add('swap-target');
+  } else {
+    videoElm.classList.remove('swap-target');
+  }
+
+  div!.classList.toggle('canvas-only', Boolean(canvasEnabled && !videoEnabled));
+  const primary = state.primaryVideoByIdentity.get(identity) ?? 'camera';
+  div!.classList.toggle('canvas-primary', Boolean(bothVideo && primary === 'canvas'));
 
   const micEnabled = micPub && micPub.isSubscribed && !micPub.isMuted;
   if (micEnabled) {
@@ -741,6 +868,69 @@ function renderScreenShare(room: Room) {
   }
 }
 
+function getCanvasTrackPublication(participant: Participant): TrackPublication | undefined {
+  return participant.getTrackPublicationByName(CANVAS_TRACK_NAME);
+}
+
+/** Demo canvas draws in a worker (OffscreenCanvas); main thread only runs captureStream. */
+function initializeCanvasSource() {
+  try {
+    startDemoCanvasWorkerAnimation();
+    state.canvasVideo.supported = true;
+  } catch (err) {
+    appendLog('failed to start canvas worker', err);
+    setButtonDisabled('toggle-canvas-video-button', true);
+  }
+}
+
+function getCanvasCaptureTrack(): CanvasVideoTrack {
+  if (state.canvasVideo.track?.readyState === 'live') {
+    return state.canvasVideo.track as CanvasVideoTrack;
+  }
+
+  const canvas = getDemoCanvasElement();
+  if (!canvas) {
+    throw new Error('canvas source is not initialized');
+  }
+
+  const stream = canvas.captureStream(CANVAS_FRAME_RATE);
+  const track = stream.getVideoTracks()[0] as CanvasVideoTrack | undefined;
+  if (!track) {
+    throw new Error('unable to capture canvas video track');
+  }
+  if ('contentHint' in track) {
+    track.contentHint = 'motion';
+  }
+
+  track.addEventListener('ended', () => {
+    if (state.canvasVideo.track === track) {
+      state.canvasVideo.track = undefined;
+      updateButtonsForPublishState();
+    }
+  });
+
+  state.canvasVideo.track = track;
+  return track;
+}
+
+function getCanvasVideoCodec(): VideoCodec {
+  if (supportsAV1()) {
+    return CANVAS_VIDEO_CODEC;
+  }
+  if (supportsVP9()) {
+    appendLog('AV1 is not supported by this browser, falling back to VP9 for canvas video');
+    return 'vp9';
+  }
+  appendLog('AV1 is not supported by this browser, falling back to VP8 for canvas video');
+  return 'vp8';
+}
+
+function disposeCanvasCapture() {
+  state.canvasVideo.track?.stop();
+  state.canvasVideo.track = undefined;
+  stopDemoCanvasWorkerAnimation();
+}
+
 function renderBitrate() {
   if (!currentRoom || currentRoom.state !== RoomState.Connected) return;
   const participants: Participant[] = [...currentRoom.remoteParticipants.values()];
@@ -799,6 +989,7 @@ function setButtonsForState(connected: boolean) {
   const connectedSet = [
     'toggle-video-button',
     'toggle-audio-button',
+    'toggle-canvas-video-button',
     'share-screen-button',
     'flip-video-button',
     'disconnect-room-button',
@@ -851,6 +1042,7 @@ function populateSelect(
 function updateButtonsForPublishState() {
   if (!currentRoom) return;
   const lp = currentRoom.localParticipant;
+  const canvasPublished = Boolean(getCanvasTrackPublication(lp));
 
   setButtonState(
     'toggle-video-button',
@@ -866,6 +1058,12 @@ function updateButtonsForPublishState() {
     'share-screen-button',
     lp.isScreenShareEnabled ? 'Stop Screen Share' : 'Share Screen',
     lp.isScreenShareEnabled,
+  );
+  setButtonState(
+    'toggle-canvas-video-button',
+    canvasPublished ? 'Stop Canvas Video' : 'Publish Canvas Video',
+    canvasPublished,
+    !state.canvasVideo.supported,
   );
 }
 
@@ -885,10 +1083,14 @@ function populateSupportedCodecs() {
   if (supportsH265()) {
     options.push(['h265', 'H.265']);
   }
+  const defaultCodec = supportsAV1() ? 'av1' : 'vp8';
   for (const o of options) {
     const n = document.createElement('option');
     n.value = o[0];
     n.appendChild(document.createTextNode(o[1]));
+    if (o[0] === defaultCodec) {
+      n.selected = true;
+    }
     codecSelect.appendChild(n);
   }
 }
@@ -942,6 +1144,8 @@ function populateScalabilityModes() {
 acquireDeviceList();
 populateSupportedCodecs();
 populateScalabilityModes();
+initializeCanvasSource();
+window.addEventListener('beforeunload', disposeCanvasCapture);
 
 function acquireDeviceList() {
   handleDevicesChanged();
