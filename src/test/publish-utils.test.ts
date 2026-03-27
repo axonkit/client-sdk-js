@@ -3,6 +3,7 @@ import {
   isSVCCodec,
   determineAppropriateEncoding,
   getDefaultDegradationPreference,
+  computeVideoEncodings,
 } from '../track/publishUtils';
 import { TrackSource } from '../protocol/types';
 
@@ -92,6 +93,27 @@ describe('determineAppropriateEncoding', () => {
   it('handles portrait (height > width) resolution', () => {
     const enc = determineAppropriateEncoding(false, 720, 1280);
     expect(enc.maxBitrate).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeVideoEncodings (simulcast int scale for mediasoup-go)
+// ---------------------------------------------------------------------------
+
+describe('computeVideoEncodings', () => {
+  it('uses integer scaleResolutionDownBy (ceil min-side ratio, not float)', () => {
+    const enc = computeVideoEncodings(false, 640, 480, {
+      simulcast: true,
+      videoCodec: 'vp8',
+    });
+    expect(enc.length).toBeGreaterThan(1);
+    for (const e of enc) {
+      expect(e.scaleResolutionDownBy).toBeDefined();
+      expect(Number.isInteger(e.scaleResolutionDownBy)).toBe(true);
+    }
+    // 4:3 presets: h180 is 240×180 → min side 180; source min 480 → ceil(480/180) === 3
+    expect(enc[0].scaleResolutionDownBy).toBe(3);
+    expect(enc[enc.length - 1].scaleResolutionDownBy).toBe(1);
   });
 });
 

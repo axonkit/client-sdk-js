@@ -206,7 +206,6 @@ export interface TrackInfo {
   muted: boolean;
   width?: number;
   height?: number;
-  layers?: VideoLayer[];
   appData?: Record<string, unknown>;
 }
 
@@ -216,14 +215,6 @@ export interface DataTrackInfo {
   label: string;
   protocol: string;
   appData?: Record<string, unknown>;
-}
-
-export interface VideoLayer {
-  quality: VideoQuality;
-  width: number;
-  height: number;
-  bitrate: number;
-  ssrc?: number;
 }
 
 // --- Client Info ---
@@ -379,7 +370,6 @@ export interface TrackPublishRequest {
   videoCodec?: string;
   backupCodec?: string;
   backupCodecPolicy?: number;
-  layers?: VideoLayer[];
   appData?: Record<string, unknown>;
 }
 
@@ -410,7 +400,6 @@ export interface TrackUpdateRequest {
   trackSid: string;
   width?: number;
   height?: number;
-  layers?: VideoLayer[];
 }
 
 export interface DataTrackPublishRequest {

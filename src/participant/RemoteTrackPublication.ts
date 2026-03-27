@@ -2,7 +2,7 @@ import { types as mediasoupTypes } from 'mediasoup-client';
 import { TrackPublication, SubscriptionStatus, PermissionStatus } from './Participant';
 import type { RemoteTrack } from '../track/RemoteTrack';
 import type { RPCClient } from '../signal/RPCClient';
-import type { TrackSource, TrackInfo, VideoLayer } from '../protocol/types';
+import type { TrackSource, TrackInfo } from '../protocol/types';
 import { TrackKind, VideoQuality, StreamState } from '../protocol/types';
 import { getLogger } from '../utils/logger';
 
@@ -150,8 +150,8 @@ export class RemoteTrackPublication extends TrackPublication {
 
   /**
    * Explicitly set the desired video dimensions for this track.
-   * The dimensions are mapped to a spatialLayer by comparing against
-   * the published {@link VideoLayer}s in `info.layers`.
+   * Maps to spatialLayer using {@link TrackInfo} width/height as the high layer
+   * and typical simulcast factors (1/2, 1/4) when layer metadata is not on the wire.
    */
   setVideoDimensions(dimensions: { width: number; height: number }): void {
     if (!this.isManualOperationAllowed()) return;
@@ -197,10 +197,7 @@ export class RemoteTrackPublication extends TrackPublication {
     let temporalLayer: number | undefined;
 
     if (this._requestedVideoDimensions) {
-      spatialLayer = this.spatialLayerForDimensions(
-        this._requestedVideoDimensions,
-        this.info?.layers,
-      );
+      spatialLayer = this.spatialLayerForDimensions(this._requestedVideoDimensions);
     } else if (this._videoQuality !== undefined) {
       spatialLayer =
         this._videoQuality === VideoQuality.LOW
@@ -234,22 +231,26 @@ export class RemoteTrackPublication extends TrackPublication {
   }
 
   /**
-   * Pick the smallest layer whose dimensions are >= the requested dimensions.
-   * Falls back to the highest layer if no layer is large enough or no layers are known.
+   * Pick the smallest spatial layer whose notional size covers the request.
+   * Uses published track dimensions as the full layer; derives low/medium like
+   * LiveKit's videoLayersFromEncodings (ceil half / quarter) when only width/height exist.
    */
-  private spatialLayerForDimensions(
-    requested: { width: number; height: number },
-    layers?: VideoLayer[],
-  ): number {
-    if (!layers || layers.length === 0) {
+  private spatialLayerForDimensions(requested: { width: number; height: number }): number {
+    const w = this.info?.width;
+    const h = this.info?.height;
+    if (!w || !h) {
       return 2;
     }
-    const sorted = [...layers].sort((a, b) => a.quality - b.quality);
-    for (const layer of sorted) {
+    const layers = [
+      { q: 0, width: Math.ceil(w / 4), height: Math.ceil(h / 4) },
+      { q: 1, width: Math.ceil(w / 2), height: Math.ceil(h / 2) },
+      { q: 2, width: w, height: h },
+    ];
+    for (const layer of layers) {
       if (layer.width >= requested.width && layer.height >= requested.height) {
-        return layer.quality;
+        return layer.q;
       }
     }
-    return sorted[sorted.length - 1].quality;
+    return 2;
   }
 }

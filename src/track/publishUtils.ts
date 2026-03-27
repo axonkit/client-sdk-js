@@ -112,6 +112,17 @@ function defaultSimulcastLayers(isScreenShare: boolean, original: VideoPreset): 
   return defaultSimulcastPresets43;
 }
 
+/**
+ * Integer scale for mediasoup-go JSON (field is int). Aligns with LiveKit-style
+ * layer sizing: they use Math.ceil(sourceW / scale) per layer; here we invert that
+ * relationship so the down-scale factor is conservatively large enough vs the preset.
+ */
+function integerScaleResolutionDownBy(sourceMin: number, preset: VideoPreset): number {
+  const presetMin = Math.min(preset.width, preset.height);
+  if (presetMin <= 0) return 1;
+  return Math.max(1, Math.ceil(sourceMin / presetMin));
+}
+
 function sortPresets(presets: VideoPreset[] | undefined): VideoPreset[] | undefined {
   if (!presets) return undefined;
   return presets.sort((a, b) => {
@@ -140,7 +151,7 @@ function encodingsFromPresets(
 
     const encoding: RTCRtpEncodingParameters = {
       rid,
-      scaleResolutionDownBy: Math.max(1, size / Math.min(preset.width, preset.height)),
+      scaleResolutionDownBy: integerScaleResolutionDownBy(size, preset),
       maxBitrate: preset.encoding.maxBitrate,
     };
     const maxFramerate =

@@ -103,7 +103,6 @@ export type {
   ParticipantTrackPermission,
   TrackInfo,
   ActiveSpeaker,
-  VideoLayer,
   GroupInfo,
   JoinRequest,
   JoinResponse,
