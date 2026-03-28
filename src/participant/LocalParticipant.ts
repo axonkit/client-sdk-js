@@ -191,7 +191,6 @@ export class LocalParticipant extends Participant {
       let pub: TrackPublication | undefined;
       for (const t of tracks) {
         pub = await this.publishTrack(t, {
-          scalabilityMode: 'L1T3',
           ...publishOptions,
           source: t.source,
           stopTrackOnUnpublish: true,
@@ -348,12 +347,23 @@ export class LocalParticipant extends Participant {
       opts.simulcast = false;
     }
 
-    // --- Video: SVC scalabilityMode defaults ---
+    // --- Video: SVC defaults (screen share vs camera) ---
+    // Screen share: L1 spatial only (multi-spatial breaks encoders); assign so publishDefaults
+    // cannot leave L3T3_KEY. Chrome also needs contentHint 'motion' or SVC screenshare can sit
+    // at ~5fps / hit buggy encode paths—set early so capture/encode sees it before encodings.
     if (isVideo && opts.videoCodec && isSVCCodec(opts.videoCodec)) {
       if (isScreenShare) {
-        opts.scalabilityMode ??= 'L1T3';
+        opts.scalabilityMode = 'L1T3';
+        if ('contentHint' in localTrack.mediaStreamTrack) {
+          localTrack.mediaStreamTrack.contentHint = 'motion';
+          log.info('forcing contentHint to motion for screenshare with SVC codecs', {
+            videoCodec: opts.videoCodec,
+            source: localTrack.source,
+          });
+        }
+      } else {
+        opts.scalabilityMode ??= 'L3T3_KEY';
       }
-      opts.scalabilityMode ??= 'L3T3_KEY';
     }
 
     // --- Compute encodings ---
@@ -394,19 +404,6 @@ export class LocalParticipant extends Participant {
       codec = this.transportManager.device.recvRtpCapabilities.codecs?.find(
         (c) => c.mimeType.toLowerCase() === mimeType,
       );
-    }
-
-    // Chrome bug: screenshare + SVC limits to 5fps with default contentHint.
-    // Force 'motion' to work around it.
-    if (
-      isScreenShare &&
-      isVideo &&
-      opts.videoCodec &&
-      isSVCCodec(opts.videoCodec) &&
-      'contentHint' in localTrack.mediaStreamTrack
-    ) {
-      localTrack.mediaStreamTrack.contentHint = 'motion';
-      log.debug('set contentHint to motion for SVC screenshare');
     }
 
     const clientTrackId = generateLogId();
