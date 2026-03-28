@@ -191,6 +191,7 @@ export class LocalParticipant extends Participant {
       let pub: TrackPublication | undefined;
       for (const t of tracks) {
         pub = await this.publishTrack(t, {
+          scalabilityMode: 'L1T3',
           ...publishOptions,
           source: t.source,
           stopTrackOnUnpublish: true,

@@ -136,7 +136,7 @@ export class LocalVideoTrack extends LocalTrack {
       if (changed) {
         await sender.setParameters(params);
         const detail = qualities.map((q) => `${q.quality}=${q.enabled}`).join(',');
-        log.debug(`Dynacast quality updated for ${this.sid ?? 'unknown'}: [${detail}]`);
+        log.info(`Dynacast quality updated for ${this.sid ?? 'unknown'}: [${detail}]`);
       }
     } finally {
       release();

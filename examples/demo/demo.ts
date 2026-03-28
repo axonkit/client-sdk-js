@@ -30,6 +30,7 @@ import {
   supportsVP9,
   LocalParticipant,
   LocalTrack,
+  Track,
 } from '../../src/index';
 import { isSVCCodec } from '../../src/track/publishUtils';
 import { supportsH265 } from '../../src/utils/browser';
@@ -61,7 +62,8 @@ const state = {
 let currentRoom: Room | undefined;
 const CANVAS_TRACK_NAME = 'demo-canvas-video';
 const CANVAS_FRAME_RATE = 30;
-const CANVAS_VIDEO_CODEC: VideoCodec = 'av1';
+/** Matches 1280×720 canvas; raise if quality is insufficient. */
+const CANVAS_VIDEO_MAX_BITRATE = 2_000_000;
 
 let startTime: number;
 
@@ -402,7 +404,7 @@ const appActions = {
           source: TrackSource.Unknown,
           videoCodec: canvasCodec,
           videoEncoding: {
-            maxBitrate: 1_500_000,
+            maxBitrate: CANVAS_VIDEO_MAX_BITRATE,
             maxFramerate: CANVAS_FRAME_RATE,
           },
           simulcast: false,
@@ -441,7 +443,13 @@ const appActions = {
     appendLog(`${enabled ? 'stopping' : 'starting'} screen share`);
     setButtonDisabled('share-screen-button', true);
     try {
-      await currentRoom.localParticipant.setScreenShareEnabled(!enabled, { audio: true });
+      await currentRoom.localParticipant.setScreenShareEnabled(!enabled, {
+        audio: true,
+        resolution: VideoPresets.h1080.resolution,
+        frameRate: 30,
+        /** 本机扬声器不播放被共享源里的声音；远端仍可收到 ScreenShareAudio。 */
+        suppressLocalAudioPlayback: true,
+      });
     } catch (e) {
       appendLog('error sharing screen', e);
     }
@@ -824,40 +832,42 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
 
 function renderScreenShare(room: Room) {
   const div = $('screenshare-area')!;
+  const videoElm = <HTMLVideoElement>$('screenshare-video');
   if (room.state !== RoomState.Connected) {
     div.style.display = 'none';
+    clearScreenShareElement(videoElm);
     return;
   }
   let participant: Participant | undefined;
   let screenSharePub: TrackPublication | undefined = room.localParticipant.getTrackPublication(
     TrackSource.ScreenShare,
   );
-  let screenShareAudioPub: RemoteTrackPublication | undefined;
+  let screenShareAudioPub: TrackPublication | undefined;
 
   if (!screenSharePub) {
     room.remoteParticipants.forEach((p) => {
-      if (screenSharePub) return;
-      participant = p;
       const pub = p.getTrackPublication(TrackSource.ScreenShare);
-      if (pub?.isSubscribed) {
-        screenSharePub = pub;
-      }
+      if (!pub?.isSubscribed || screenSharePub) return;
+      screenSharePub = pub;
+      participant = p;
       const audioPub = p.getTrackPublication(TrackSource.ScreenShareAudio);
       if (audioPub?.isSubscribed) {
-        screenShareAudioPub = audioPub as RemoteTrackPublication;
+        screenShareAudioPub = audioPub;
       }
     });
   } else {
     participant = room.localParticipant;
+    const audioPub = room.localParticipant.getTrackPublication(TrackSource.ScreenShareAudio);
+    if (audioPub?.isSubscribed) {
+      screenShareAudioPub = audioPub;
+    }
   }
 
   if (screenSharePub && participant) {
     div.style.display = 'block';
-    const videoElm = <HTMLVideoElement>$('screenshare-video');
-    screenSharePub.videoTrack?.attach(videoElm);
-    if (screenShareAudioPub) {
-      screenShareAudioPub.audioTrack?.attach(videoElm);
-    }
+    // 本地预览只绑视频轨，避免共享音频再从本机 <video> 放出；远端仍合并音轨。
+    const previewAudioTrack = participant.isLocal ? undefined : screenShareAudioPub?.audioTrack;
+    attachScreenShareTracks(videoElm, screenSharePub.videoTrack, previewAudioTrack);
     videoElm.onresize = () => {
       updateVideoSize(videoElm, <HTMLSpanElement>$('screenshare-resolution'));
     };
@@ -865,7 +875,41 @@ function renderScreenShare(room: Room) {
     infoElm.innerHTML = `Screenshare from ${participant.identity}`;
   } else {
     div.style.display = 'none';
+    clearScreenShareElement(videoElm);
   }
+}
+
+/**
+ * `Track.attach` assigns a single-track MediaStream to the element; attaching screen video then
+ * screen-share audio would overwrite `srcObject` and drop the video. Merge both into one stream.
+ */
+function attachScreenShareTracks(
+  videoElm: HTMLVideoElement,
+  videoTrack: Track | undefined,
+  audioTrack: Track | undefined,
+): void {
+  videoTrack?.detach(videoElm);
+  audioTrack?.detach(videoElm);
+
+  const v = videoTrack?.mediaStreamTrack;
+  const a = audioTrack?.mediaStreamTrack;
+  const tracks: MediaStreamTrack[] = [];
+  if (v) tracks.push(v);
+  if (a) tracks.push(a);
+  if (tracks.length === 0) {
+    videoElm.srcObject = null;
+    return;
+  }
+
+  videoElm.autoplay = true;
+  videoElm.playsInline = true;
+  videoElm.srcObject = new MediaStream(tracks);
+  videoElm.muted = !a;
+  videoElm.play().catch(() => {});
+}
+
+function clearScreenShareElement(videoElm: HTMLVideoElement): void {
+  videoElm.srcObject = null;
 }
 
 function getCanvasTrackPublication(participant: Participant): TrackPublication | undefined {
@@ -914,14 +958,32 @@ function getCanvasCaptureTrack(): CanvasVideoTrack {
 }
 
 function getCanvasVideoCodec(): VideoCodec {
-  if (supportsAV1()) {
-    return CANVAS_VIDEO_CODEC;
+  const raw = (<HTMLSelectElement>$('preferred-codec')).value as VideoCodec;
+  const preferred = (raw || 'av1') as VideoCodec;
+
+  const browserCanEncode = (c: VideoCodec): boolean => {
+    switch (c) {
+      case 'av1':
+        return supportsAV1();
+      case 'vp9':
+        return supportsVP9();
+      case 'h265':
+        return supportsH265();
+      case 'vp8':
+      case 'h264':
+        return true;
+      default:
+        return true;
+    }
+  };
+
+  if (browserCanEncode(preferred)) {
+    return preferred;
   }
-  if (supportsVP9()) {
-    appendLog('AV1 is not supported by this browser, falling back to VP9 for canvas video');
-    return 'vp9';
-  }
-  appendLog('AV1 is not supported by this browser, falling back to VP8 for canvas video');
+
+  appendLog(`canvas video: cannot encode ${preferred} in this browser, using fallback`);
+  if (supportsAV1()) return 'av1';
+  if (supportsVP9()) return 'vp9';
   return 'vp8';
 }
 

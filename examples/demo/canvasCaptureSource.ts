@@ -1,5 +1,6 @@
-export const DEMO_CANVAS_WIDTH = 640;
-export const DEMO_CANVAS_HEIGHT = 360;
+/** 720p capture size for demo canvas video. */
+export const DEMO_CANVAS_WIDTH = 1280;
+export const DEMO_CANVAS_HEIGHT = 720;
 
 let canvasEl: HTMLCanvasElement | undefined;
 let worker: Worker | undefined;
