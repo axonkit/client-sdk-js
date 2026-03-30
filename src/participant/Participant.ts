@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { TypedEmitter } from '../utils/typedEmitter';
 import type {
   ParticipantInfo,
@@ -116,36 +117,39 @@ export class TrackPublication {
   }
 }
 
-export type ParticipantEvents = {
-  [ParticipantEvent.TrackPublished]: (publication: TrackPublication) => void;
-  [ParticipantEvent.TrackUnpublished]: (publication: TrackPublication) => void;
-  [ParticipantEvent.TrackMuted]: (publication: TrackPublication) => void;
-  [ParticipantEvent.TrackUnmuted]: (publication: TrackPublication) => void;
-  [ParticipantEvent.TrackSubscribed]: (track: Track, publication: TrackPublication) => void;
-  [ParticipantEvent.TrackUnsubscribed]: (track: Track, publication: TrackPublication) => void;
-  [ParticipantEvent.LocalTrackPublished]: (publication: TrackPublication) => void;
-  [ParticipantEvent.LocalTrackUnpublished]: (publication: TrackPublication) => void;
+export type ParticipantEvents<TPublication extends TrackPublication = TrackPublication> = {
+  [ParticipantEvent.TrackPublished]: (publication: TPublication) => void;
+  [ParticipantEvent.TrackUnpublished]: (publication: TPublication) => void;
+  [ParticipantEvent.TrackMuted]: (publication: TPublication) => void;
+  [ParticipantEvent.TrackUnmuted]: (publication: TPublication) => void;
+  [ParticipantEvent.TrackSubscribed]: (track: Track, publication: TPublication) => void;
+  [ParticipantEvent.TrackUnsubscribed]: (track: Track, publication: TPublication) => void;
+  [ParticipantEvent.LocalTrackPublished]: (publication: TPublication) => void;
+  [ParticipantEvent.LocalTrackUnpublished]: (publication: TPublication) => void;
   [ParticipantEvent.MetadataChanged]: (
     metadata: string | undefined,
-    participant: Participant,
+    participant: Participant<any, any>,
   ) => void;
-  [ParticipantEvent.NameChanged]: (name: string | undefined, participant: Participant) => void;
+  [ParticipantEvent.NameChanged]: (name: string | undefined, participant: Participant<any, any>) => void;
   [ParticipantEvent.AttributesChanged]: (
     changedAttributes: Record<string, string>,
-    participant: Participant,
+    participant: Participant<any, any>,
   ) => void;
   [ParticipantEvent.IsSpeakingChanged]: (speaking: boolean) => void;
   [ParticipantEvent.ConnectionQualityChanged]: (quality: ConnectionQuality) => void;
   [ParticipantEvent.PermissionsChanged]: (prevPermissions?: ParticipantPermission) => void;
   [ParticipantEvent.TrackStreamStateChanged]: (
-    publication: TrackPublication,
+    publication: TPublication,
     streamState: StreamState,
   ) => void;
   [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
   [ParticipantEvent.ChatMessage]: (message: Message) => void;
 };
 
-export abstract class Participant extends TypedEmitter<ParticipantEvents> {
+export abstract class Participant<
+  TPublication extends TrackPublication = TrackPublication,
+  TEvents extends ParticipantEvents<TPublication> = ParticipantEvents<TPublication>,
+> extends TypedEmitter<TEvents> {
   sid: string;
   identity: string;
   name?: string;
@@ -157,15 +161,22 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   permissions?: ParticipantPermission;
   /** The group (breakout room) this participant is currently in. `undefined` = main room. */
   groupId?: string;
-  trackPublications = new Map<string, TrackPublication>();
-  audioTrackPublications = new Map<string, TrackPublication>();
-  videoTrackPublications = new Map<string, TrackPublication>();
+  trackPublications = new Map<string, TPublication>();
+  audioTrackPublications = new Map<string, TPublication>();
+  videoTrackPublications = new Map<string, TPublication>();
   lastSpokeAt?: Date;
   joinedAt?: Date;
 
   private _connectionQuality: ConnectionQuality = ConnectionQuality.Unknown;
   private _kind: ParticipantKind = ParticipantKind.Standard;
   private _activeResolvers: Array<() => void> = [];
+
+  private emitParticipantEvent<E extends keyof ParticipantEvents<TPublication>>(
+    event: E,
+    ...args: Parameters<ParticipantEvents<TPublication>[E]>
+  ): void {
+    EventEmitter.prototype.emit.call(this, event, ...args);
+  }
 
   constructor(sid: string, identity: string, name?: string, metadata?: string) {
     super();
@@ -213,7 +224,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   setConnectionQuality(quality: ConnectionQuality): void {
     if (this._connectionQuality === quality) return;
     this._connectionQuality = quality;
-    this.emit(ParticipantEvent.ConnectionQualityChanged, quality);
+    this.emitParticipantEvent(ParticipantEvent.ConnectionQualityChanged, quality);
   }
 
   /** @internal */
@@ -233,7 +244,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
     this.permissions = permissions;
 
     if (changed) {
-      this.emit(ParticipantEvent.PermissionsChanged, prevPermissions);
+      this.emitParticipantEvent(ParticipantEvent.PermissionsChanged, prevPermissions);
     }
     return changed;
   }
@@ -256,7 +267,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   /**
    * Returns all track publications as an array.
    */
-  getTrackPublications(): TrackPublication[] {
+  getTrackPublications(): TPublication[] {
     return Array.from(this.trackPublications.values());
   }
 
@@ -276,12 +287,12 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
 
     if (info.name !== undefined && info.name !== this.name) {
       this.name = info.name;
-      this.emit(ParticipantEvent.NameChanged, this.name, this);
+      this.emitParticipantEvent(ParticipantEvent.NameChanged, this.name, this);
     }
 
     if (info.metadata !== undefined && info.metadata !== this.metadata) {
       this.metadata = info.metadata;
-      this.emit(ParticipantEvent.MetadataChanged, this.metadata, this);
+      this.emitParticipantEvent(ParticipantEvent.MetadataChanged, this.metadata, this);
     }
 
     if (info.permission) {
@@ -301,7 +312,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
       }
       this.attributes = { ...info.attributes };
       if (Object.keys(changed).length > 0) {
-        this.emit(ParticipantEvent.AttributesChanged, changed, this);
+        this.emitParticipantEvent(ParticipantEvent.AttributesChanged, changed, this);
       }
     }
 
@@ -313,7 +324,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
     }
   }
 
-  getTrackPublication(source: TrackSource): TrackPublication | undefined {
+  getTrackPublication(source: TrackSource): TPublication | undefined {
     for (const pub of this.trackPublications.values()) {
       if (pub.source === source) return pub;
     }
@@ -321,14 +332,14 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   }
 
   /** @internal */
-  getTrackPublicationBySid(trackSid: string): TrackPublication | undefined {
+  getTrackPublicationBySid(trackSid: string): TPublication | undefined {
     return this.trackPublications.get(trackSid);
   }
 
   /**
    * Find a track publication by its name.
    */
-  getTrackPublicationByName(name: string): TrackPublication | undefined {
+  getTrackPublicationByName(name: string): TPublication | undefined {
     for (const pub of this.trackPublications.values()) {
       if (pub.trackName === name) return pub;
     }
@@ -336,7 +347,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   }
 
   /** @internal */
-  protected addTrackPublicationToMaps(pub: TrackPublication): void {
+  protected addTrackPublicationToMaps(pub: TPublication): void {
     this.trackPublications.set(pub.trackSid, pub);
     if (pub.kind === TrackKind.Audio) {
       this.audioTrackPublications.set(pub.trackSid, pub);
@@ -346,7 +357,7 @@ export abstract class Participant extends TypedEmitter<ParticipantEvents> {
   }
 
   /** @internal */
-  protected removeTrackPublicationFromMaps(trackSid: string): TrackPublication | undefined {
+  protected removeTrackPublicationFromMaps(trackSid: string): TPublication | undefined {
     const pub = this.trackPublications.get(trackSid);
     if (!pub) return undefined;
     this.trackPublications.delete(trackSid);

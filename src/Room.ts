@@ -5,8 +5,9 @@ import { RPCClient } from './signal/RPCClient';
 import { TransportManager } from './transport/TransportManager';
 import { LocalParticipant } from './participant/LocalParticipant';
 import { RemoteParticipant } from './participant/RemoteParticipant';
-import { Participant, type TrackPublication } from './participant/Participant';
+import { Participant } from './participant/Participant';
 import { LocalTrackPublication } from './participant/LocalTrackPublication';
+import type { RemoteTrackPublication } from './participant/RemoteTrackPublication';
 import { VERSION, PROTOCOL_VERSION } from './version';
 import {
   RoomState,
@@ -98,32 +99,38 @@ export type RoomEvents = {
     participant: Participant,
   ) => void;
   [RoomEvent.TrackPublished]: (
-    publication: TrackPublication,
+    publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => void;
   [RoomEvent.TrackUnpublished]: (
-    publication: TrackPublication,
+    publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => void;
   [RoomEvent.TrackSubscribed]: (
     track: Track,
-    publication: TrackPublication,
+    publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => void;
   [RoomEvent.TrackSubscriptionFailed]: (trackSid: string, participant: RemoteParticipant) => void;
   [RoomEvent.TrackUnsubscribed]: (
     track: Track,
-    publication: TrackPublication,
+    publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => void;
-  [RoomEvent.TrackMuted]: (publication: TrackPublication, participant: Participant) => void;
-  [RoomEvent.TrackUnmuted]: (publication: TrackPublication, participant: Participant) => void;
+  [RoomEvent.TrackMuted]: (
+    publication: LocalTrackPublication | RemoteTrackPublication,
+    participant: Participant,
+  ) => void;
+  [RoomEvent.TrackUnmuted]: (
+    publication: LocalTrackPublication | RemoteTrackPublication,
+    participant: Participant,
+  ) => void;
   [RoomEvent.LocalTrackPublished]: (
-    publication: TrackPublication,
+    publication: LocalTrackPublication,
     participant: LocalParticipant,
   ) => void;
   [RoomEvent.LocalTrackUnpublished]: (
-    publication: TrackPublication,
+    publication: LocalTrackPublication,
     participant: LocalParticipant,
   ) => void;
   [RoomEvent.LocalAudioSilenceDetected]: () => void;
@@ -150,7 +157,7 @@ export type RoomEvents = {
     participantIdentity?: string,
   ) => void;
   [RoomEvent.TrackStreamStateChanged]: (
-    publication: TrackPublication,
+    publication: RemoteTrackPublication,
     streamState: StreamState,
     participant: RemoteParticipant,
   ) => void;

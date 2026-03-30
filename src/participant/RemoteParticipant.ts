@@ -1,5 +1,5 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { Participant, TrackPublication } from './Participant';
+import { Participant } from './Participant';
 import { RemoteTrackPublication } from './RemoteTrackPublication';
 import { RemoteTrack } from '../track/RemoteTrack';
 import { RemoteAudioTrack } from '../track/RemoteAudioTrack';
@@ -19,7 +19,7 @@ import { STREAM_DATA_LABEL, type DataStreamReceiver } from '../data-stream/DataS
 
 const log = getLogger('RemoteParticipant');
 
-export class RemoteParticipant extends Participant {
+export class RemoteParticipant extends Participant<RemoteTrackPublication> {
   private transportManager!: TransportManager;
   private rpc!: RPCClient;
   private consumers = new Map<string, mediasoupTypes.Consumer>();
@@ -104,7 +104,7 @@ export class RemoteParticipant extends Participant {
   }
 
   /** @internal */
-  removeTrackPublication(trackSid: string): TrackPublication | undefined {
+  removeTrackPublication(trackSid: string): RemoteTrackPublication | undefined {
     const pub = this.removeTrackPublicationFromMaps(trackSid);
     if (!pub) return undefined;
 
@@ -150,7 +150,7 @@ export class RemoteParticipant extends Participant {
       track.setMuted(true);
     }
 
-    let pub = this.trackPublications.get(req.trackSid) as RemoteTrackPublication | undefined;
+    let pub = this.trackPublications.get(req.trackSid);
     if (pub) {
       pub.track = track;
       pub.consumer = consumer;

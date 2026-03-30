@@ -1,5 +1,5 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { Participant, TrackPublication } from './Participant';
+import { Participant } from './Participant';
 import { LocalTrackPublication } from './LocalTrackPublication';
 import { LocalTrack } from '../track/LocalTrack';
 import { LocalAudioTrack } from '../track/LocalAudioTrack';
@@ -63,7 +63,7 @@ import { RpcError, byteLength, MAX_RPC_PAYLOAD_BYTES } from '../rpc';
 
 const log = getLogger('LocalParticipant');
 
-export class LocalParticipant extends Participant {
+export class LocalParticipant extends Participant<LocalTrackPublication> {
   private rpc!: RPCClient;
   private transportManager!: TransportManager;
   private producers = new Map<string, mediasoupTypes.Producer>();
@@ -125,7 +125,7 @@ export class LocalParticipant extends Participant {
     enabled: boolean,
     captureOptions?: VideoCaptureOptions,
     publishOptions?: TrackPublishOptions,
-  ): Promise<TrackPublication | undefined> {
+  ): Promise<LocalTrackPublication | undefined> {
     if (enabled) {
       try {
         const mergedCapture = {
@@ -155,7 +155,7 @@ export class LocalParticipant extends Participant {
     enabled: boolean,
     captureOptions?: AudioCaptureOptions,
     publishOptions?: TrackPublishOptions,
-  ): Promise<TrackPublication | undefined> {
+  ): Promise<LocalTrackPublication | undefined> {
     if (enabled) {
       try {
         const mergedCapture = {
@@ -185,10 +185,10 @@ export class LocalParticipant extends Participant {
     enabled: boolean,
     captureOptions?: ScreenShareCaptureOptions,
     publishOptions?: TrackPublishOptions,
-  ): Promise<TrackPublication | undefined> {
+  ): Promise<LocalTrackPublication | undefined> {
     if (enabled) {
       const tracks = await createLocalScreenTracks(captureOptions);
-      let pub: TrackPublication | undefined;
+      let pub: LocalTrackPublication | undefined;
       for (const t of tracks) {
         pub = await this.publishTrack(t, {
           ...publishOptions,
@@ -257,7 +257,7 @@ export class LocalParticipant extends Participant {
   async publishTrack(
     track: LocalTrack | MediaStreamTrack,
     options?: TrackPublishOptions,
-  ): Promise<TrackPublication> {
+  ): Promise<LocalTrackPublication> {
     let localTrack: LocalTrack;
 
     if (track instanceof MediaStreamTrack) {
