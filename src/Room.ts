@@ -533,6 +533,8 @@ export class Room extends TypedEmitter<RoomEvents> {
         this._localParticipant.state = ParticipantState.Joined;
       }
 
+      console.log('readyResp', readyResp);
+
       const readyParticipants = this.applyReadySnapshot(readyResp);
 
       this.setState(RoomState.Connected);
