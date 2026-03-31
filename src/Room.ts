@@ -28,6 +28,8 @@ import {
   type ParticipantUpdatedNotification,
   type TrackPublishedNotification,
   type TrackUnpublishedNotification,
+  type DataTrackPublishedNotification,
+  type DataTrackUnpublishedNotification,
   type TrackMutedNotification,
   type TrackSubscribedQualityChangedNotification,
   type ActiveSpeakersChangedNotification,
@@ -37,10 +39,12 @@ import {
   type SubscriptionClosedNotification,
   type DataSubscriptionCreateRequest,
   type DataSubscriptionClosedNotification,
+  type ParticipantInfo,
   type GroupInfo,
   type CreateGroupResponse,
   type ListGroupsResponse,
   type GroupCreatedNotification,
+  type GroupUpdatedNotification,
   type GroupDeletedNotification,
   type GroupParticipantJoinedNotification,
   type GroupParticipantLeftNotification,
@@ -162,6 +166,7 @@ export type RoomEvents = {
     participant: RemoteParticipant,
   ) => void;
   [RoomEvent.GroupCreated]: (group: GroupInfo) => void;
+  [RoomEvent.GroupUpdated]: (group: GroupInfo) => void;
   [RoomEvent.GroupDeleted]: (groupId: string) => void;
   [RoomEvent.GroupParticipantJoined]: (groupId: string, participant: Participant) => void;
   [RoomEvent.GroupParticipantLeft]: (groupId: string, participant: Participant) => void;
@@ -528,34 +533,10 @@ export class Room extends TypedEmitter<RoomEvents> {
         this._localParticipant.state = ParticipantState.Joined;
       }
 
-      if (readyResp.room) {
-        this._roomInfo = readyResp.room;
-        this._name = readyResp.room.name;
-      }
-
-      if (readyResp?.otherParticipants) {
-        for (const info of readyResp.otherParticipants) {
-          const rp = RemoteParticipant.fromInfo(info);
-          rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
-          this._remoteParticipants.set(info.sid, rp);
-          this.wireRemoteParticipantEvents(rp);
-        }
-      }
-
-      if (readyResp.groups) {
-        for (const g of readyResp.groups) {
-          this._groups.set(g.groupId, g);
-        }
-      }
-
-      if (readyResp.sharedState) {
-        this._sharedState.clear();
-        for (const [k, v] of Object.entries(readyResp.sharedState)) {
-          this._sharedState.set(k, v);
-        }
-      }
+      const readyParticipants = this.applyReadySnapshot(readyResp);
 
       this.setState(RoomState.Connected);
+      this.scheduleReadySnapshotReplay(readyParticipants);
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this.startStatsCollector(joinResponse.statsInterval);
       this.reconnectAttempts = 0;
@@ -696,18 +677,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       };
       const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
 
-      if (readyResp.room) {
-        this._roomInfo = readyResp.room;
-        this._name = readyResp.room.name;
-      }
-
-      // Restore groups from server.
-      if (readyResp.groups) {
-        this._groups.clear();
-        for (const g of readyResp.groups) {
-          this._groups.set(g.groupId, g);
-        }
-      }
+      this.applyReadySnapshot(readyResp);
 
       // Replay messages missed during disconnect.
       if (readyResp.messages) {
@@ -1037,6 +1007,20 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.handleTrackUnpublished(body);
     });
 
+    this.rpcClient.onNotification(
+      'dataTrack.published',
+      (body: DataTrackPublishedNotification) => {
+        this.handleDataTrackPublished(body);
+      },
+    );
+
+    this.rpcClient.onNotification(
+      'dataTrack.unpublished',
+      (body: DataTrackUnpublishedNotification) => {
+        this.handleDataTrackUnpublished(body);
+      },
+    );
+
     this.rpcClient.onNotification('track.muted', (body: TrackMutedNotification) => {
       this.handleTrackMuted(body);
     });
@@ -1111,6 +1095,11 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.emit(RoomEvent.GroupCreated, body.group);
     });
 
+    this.rpcClient.onNotification('group.updated', (body: GroupUpdatedNotification) => {
+      this._groups.set(body.group.groupId, body.group);
+      this.emit(RoomEvent.GroupUpdated, body.group);
+    });
+
     this.rpcClient.onNotification('group.deleted', (body: GroupDeletedNotification) => {
       this._groups.delete(body.groupId);
       if (this._localParticipant.groupId === body.groupId) {
@@ -1147,13 +1136,105 @@ export class Room extends TypedEmitter<RoomEvents> {
     );
   }
 
+  private applyReadySnapshot(readyResp: ReadyResponse): RemoteParticipant[] {
+    if (readyResp.room) {
+      this._roomInfo = readyResp.room;
+      this._name = readyResp.room.name;
+    }
+
+    const readyParticipants = this.replaceRemoteParticipants(readyResp.otherParticipants);
+    this.replaceGroups(readyResp.groups);
+    this.replaceSharedState(readyResp.sharedState);
+    return readyParticipants;
+  }
+
+  private replaceRemoteParticipants(participants?: ParticipantInfo[]): RemoteParticipant[] {
+    if (!participants) return [];
+
+    const nextSids = new Set<string>();
+    const readyParticipants: RemoteParticipant[] = [];
+    for (const info of participants) {
+      nextSids.add(info.sid);
+      readyParticipants.push(this.upsertRemoteParticipant(info));
+    }
+
+    for (const [sid, rp] of this._remoteParticipants) {
+      if (nextSids.has(sid)) continue;
+      rp.closeAll();
+      this._remoteParticipants.delete(sid);
+    }
+
+    return readyParticipants;
+  }
+
+  private replaceGroups(groups?: GroupInfo[]): void {
+    if (!groups) return;
+
+    this._groups.clear();
+    for (const group of groups) {
+      this._groups.set(group.groupId, group);
+    }
+  }
+
+  private replaceSharedState(sharedState?: Record<string, string>): void {
+    if (!sharedState) return;
+
+    this._sharedState.clear();
+    for (const [key, value] of Object.entries(sharedState)) {
+      this._sharedState.set(key, value);
+    }
+  }
+
+  private upsertRemoteParticipant(info: ParticipantInfo): RemoteParticipant {
+    const existing = this._remoteParticipants.get(info.sid);
+    if (existing) {
+      existing.updateFromInfo(info);
+      return existing;
+    }
+
+    const rp = RemoteParticipant.fromInfo(info);
+    rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
+    this._remoteParticipants.set(info.sid, rp);
+    this.wireRemoteParticipantEvents(rp);
+    return rp;
+  }
+
+  private scheduleReadySnapshotReplay(participants: RemoteParticipant[]): void {
+    if (participants.length === 0) return;
+
+    const replayParticipants = participants.map((participant) => ({
+      participant,
+      publications: [...participant.trackPublications.values()],
+    }));
+
+    // Replay initial snapshot events after connect so apps can use the same
+    // event-based path for pre-existing participants and publications.
+    setTimeout(() => {
+      if (this._state !== RoomState.Connected) return;
+
+      for (const { participant, publications } of replayParticipants) {
+        if (this._remoteParticipants.get(participant.sid) !== participant) continue;
+
+        this.emit(RoomEvent.ParticipantJoined, participant);
+        for (const publication of publications) {
+          if (participant.getTrackPublicationBySid(publication.trackSid) !== publication) continue;
+
+          this.emit(RoomEvent.TrackPublished, publication, participant);
+        }
+      }
+    }, 0);
+  }
+
   // --- Notification Handlers ---
 
   private handleParticipantJoined(body: ParticipantJoinedNotification): void {
-    const rp = RemoteParticipant.fromInfo(body.participant);
-    rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
-    this._remoteParticipants.set(rp.sid, rp);
-    this.wireRemoteParticipantEvents(rp);
+    const existed = this._remoteParticipants.has(body.participant.sid);
+    const rp = this.upsertRemoteParticipant(body.participant);
+    if (existed) {
+      this.emit(RoomEvent.ParticipantUpdated, rp);
+      log.info(`Participant updated via join event: ${rp.identity} (${rp.sid})`);
+      return;
+    }
     this.emit(RoomEvent.ParticipantJoined, rp);
     log.info(`Participant joined: ${rp.identity} (${rp.sid})`);
   }
@@ -1169,10 +1250,13 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private handleParticipantUpdated(body: ParticipantUpdatedNotification): void {
-    const rp = this._remoteParticipants.get(body.participant.sid);
-    if (!rp) return;
-
-    rp.updateFromInfo(body.participant);
+    const existed = this._remoteParticipants.has(body.participant.sid);
+    const rp = this.upsertRemoteParticipant(body.participant);
+    if (!existed) {
+      this.emit(RoomEvent.ParticipantJoined, rp);
+      log.warn(`Participant updated before join event: ${rp.identity} (${rp.sid})`);
+      return;
+    }
     this.emit(RoomEvent.ParticipantUpdated, rp);
   }
 
@@ -1192,6 +1276,20 @@ export class Room extends TypedEmitter<RoomEvents> {
     if (pub) {
       this.emit(RoomEvent.TrackUnpublished, pub, rp);
     }
+  }
+
+  private handleDataTrackPublished(body: DataTrackPublishedNotification): void {
+    const rp = this._remoteParticipants.get(body.participantSid);
+    if (!rp) return;
+
+    this.emit(RoomEvent.DataTrackPublished, body.dataTrack, rp);
+  }
+
+  private handleDataTrackUnpublished(body: DataTrackUnpublishedNotification): void {
+    const rp = this._remoteParticipants.get(body.participantSid);
+    if (!rp) return;
+
+    this.emit(RoomEvent.DataTrackUnpublished, body.dataTrackSid, rp);
   }
 
   private handleTrackMuted(body: TrackMutedNotification): void {

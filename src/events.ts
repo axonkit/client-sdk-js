@@ -111,6 +111,20 @@ export enum RoomEvent {
   TrackUnpublished = 'trackUnpublished',
 
   /**
+   * A remote participant has published a new data track.
+   *
+   * args: `(dataTrack: DataTrackInfo, participant: RemoteParticipant)`
+   */
+  DataTrackPublished = 'dataTrackPublished',
+
+  /**
+   * A remote participant has unpublished a data track.
+   *
+   * args: `(dataTrackSid: string, participant: RemoteParticipant)`
+   */
+  DataTrackUnpublished = 'dataTrackUnpublished',
+
+  /**
    * Subscribed to a new track from a remote participant. This is the event
    * where you would typically attach the track to a media element.
    *
@@ -258,6 +272,13 @@ export enum RoomEvent {
    * args: `(group: GroupInfo)`
    */
   GroupCreated = 'groupCreated',
+
+  /**
+   * A group's metadata or participant count has changed.
+   *
+   * args: `(group: GroupInfo)`
+   */
+  GroupUpdated = 'groupUpdated',
 
   /**
    * A group has been deleted. All participants in the group are

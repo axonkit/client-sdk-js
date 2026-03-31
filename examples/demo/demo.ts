@@ -357,9 +357,6 @@ const appActions = {
     (window as any).currentRoom = room;
     setButtonsForState(true);
 
-    room.remoteParticipants.forEach((participant) => {
-      participantConnected(participant);
-    });
     participantConnected(room.localParticipant);
     updateButtonsForPublishState();
 

@@ -102,6 +102,7 @@ export type {
   ParticipantPermission,
   ParticipantTrackPermission,
   TrackInfo,
+  DataTrackInfo,
   ActiveSpeaker,
   GroupInfo,
   JoinRequest,

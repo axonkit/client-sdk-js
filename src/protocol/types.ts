@@ -523,6 +523,16 @@ export interface TrackUnpublishedNotification {
   trackSid: string;
 }
 
+export interface DataTrackPublishedNotification {
+  participantSid: string;
+  dataTrack: DataTrackInfo;
+}
+
+export interface DataTrackUnpublishedNotification {
+  participantSid: string;
+  dataTrackSid: string;
+}
+
 export interface TrackMutedNotification {
   participantSid: string;
   trackSid: string;
@@ -605,6 +615,10 @@ export interface JoinGroupResponse {
 }
 
 export interface GroupCreatedNotification {
+  group: GroupInfo;
+}
+
+export interface GroupUpdatedNotification {
   group: GroupInfo;
 }
 
