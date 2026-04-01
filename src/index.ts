@@ -1,17 +1,12 @@
 // Core
 export { Room } from './Room';
-export type { RoomEvents, ConnectOptions } from './Room';
+export type { RoomEvents } from './Room';
 
 // Events
 export { RoomEvent, ParticipantEvent, TrackEvent } from './events';
 
 // Participants
-export {
-  Participant,
-  TrackPublication,
-  SubscriptionStatus,
-  PermissionStatus,
-} from './participant/Participant';
+export { Participant, TrackPublication, SubscriptionStatus } from './participant/Participant';
 export type { ParticipantEvents } from './participant/Participant';
 export { LocalParticipant } from './participant/LocalParticipant';
 export { RemoteParticipant } from './participant/RemoteParticipant';
@@ -42,6 +37,8 @@ export type { TrackProcessor, ProcessorOptions } from './track/processor/types';
 // Options — types
 export type {
   RoomOptions,
+  RoomConnectOptions,
+  InternalRoomConnectOptions,
   TrackPublishDefaults,
   TrackPublishOptions,
   DataPublishOptions,
@@ -56,7 +53,6 @@ export type {
   PublishCodecOptions,
   AdaptiveStreamSettings,
   CreateLocalTracksOptions,
-  ReconnectPolicy,
   ScalabilityMode,
   VideoCodec,
   BackupVideoCodec,

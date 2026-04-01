@@ -1,5 +1,5 @@
 import { types as mediasoupTypes } from 'mediasoup-client';
-import { TrackPublication, SubscriptionStatus, PermissionStatus } from './Participant';
+import { TrackPublication, SubscriptionStatus } from './Participant';
 import type { RemoteTrack } from '../track/RemoteTrack';
 import type { RPCClient } from '../signal/RPCClient';
 import type { TrackSource, TrackInfo } from '../protocol/types';
@@ -9,16 +9,10 @@ import { getLogger } from '../utils/logger';
 const log = getLogger('RemoteTrackPublication');
 
 export class RemoteTrackPublication extends TrackPublication {
-  /** @internal */
-  consumer?: mediasoupTypes.Consumer;
-  /** @internal */
-  rpc?: RPCClient;
-
-  /** @internal */
-  protected allowed = true;
-
   streamState: StreamState = StreamState.Active;
 
+  private _consumer?: mediasoupTypes.Consumer;
+  private _rpc?: RPCClient;
   private _subscribed = true;
   private _videoQuality?: VideoQuality;
   private _enabled = true;
@@ -36,10 +30,23 @@ export class RemoteTrackPublication extends TrackPublication {
     info?: TrackInfo;
     consumer?: mediasoupTypes.Consumer;
     rpc?: RPCClient;
+    subscribed?: boolean;
   }) {
     super(init);
-    this.consumer = init.consumer;
-    this.rpc = init.rpc;
+    this._consumer = init.consumer;
+    this._rpc = init.rpc;
+    this._subscribed = init.subscribed ?? true;
+  }
+
+  /**
+   * @internal — wire mediasoup consumer + RPC after server pushes a subscription
+   * (existing publication from snapshot, or same path as constructor for new pubs).
+   */
+  attachSubscription(track: RemoteTrack, consumer: mediasoupTypes.Consumer, rpc: RPCClient): void {
+    this.track = track;
+    this._consumer = consumer;
+    this._rpc = rpc;
+    this._subscribed = true;
   }
 
   /** Whether this track is currently subscribed. */
@@ -60,11 +67,6 @@ export class RemoteTrackPublication extends TrackPublication {
     return SubscriptionStatus.Subscribed;
   }
 
-  /** Whether the server has allowed this track subscription. */
-  get permissionStatus(): PermissionStatus {
-    return this.allowed ? PermissionStatus.Allowed : PermissionStatus.NotAllowed;
-  }
-
   /** The currently requested video quality. */
   get videoQuality(): VideoQuality | undefined {
     return this._videoQuality ?? VideoQuality.HIGH;
@@ -82,20 +84,20 @@ export class RemoteTrackPublication extends TrackPublication {
   setEnabled(enabled: boolean): void {
     if (this._enabled === enabled) return;
     this._enabled = enabled;
-    if (!this.consumer || !this.rpc) return;
+    if (!this._consumer || !this._rpc) return;
 
     if (enabled) {
-      this.consumer.resume();
-      this.rpc
+      this._consumer.resume();
+      this._rpc
         .request('subscription.resume', {
-          subscriptionSid: this.consumer.id,
+          subscriptionSid: this._consumer.id,
         })
         .catch(() => {});
     } else {
-      this.consumer.pause();
-      this.rpc
+      this._consumer.pause();
+      this._rpc
         .request('subscription.pause', {
-          subscriptionSid: this.consumer.id,
+          subscriptionSid: this._consumer.id,
         })
         .catch(() => {});
     }
@@ -108,13 +110,10 @@ export class RemoteTrackPublication extends TrackPublication {
   setSubscribed(subscribed: boolean): void {
     if (this._subscribed === subscribed) return;
     this._subscribed = subscribed;
-    if (subscribed) {
-      this.allowed = true;
-    }
-    if (!this.rpc) return;
+    if (!this._rpc) return;
 
     if (subscribed) {
-      this.rpc
+      this._rpc
         .request('subscription.subscribe', {
           trackSid: this.trackSid,
         })
@@ -122,7 +121,7 @@ export class RemoteTrackPublication extends TrackPublication {
           log.warn('Failed to subscribe', e);
         });
     } else {
-      this.rpc
+      this._rpc
         .request('subscription.unsubscribe', {
           trackSid: this.trackSid,
         })
@@ -130,11 +129,6 @@ export class RemoteTrackPublication extends TrackPublication {
           log.warn('Failed to unsubscribe', e);
         });
     }
-  }
-
-  /** @internal */
-  setAllowed(allowed: boolean): void {
-    this.allowed = allowed;
   }
 
   /**
@@ -191,7 +185,7 @@ export class RemoteTrackPublication extends TrackPublication {
    * Computes spatialLayer from videoQuality or dimensions, and temporalLayer from fps.
    */
   private emitTrackUpdate(): void {
-    if (!this.rpc || !this.consumer) return;
+    if (!this._rpc || !this._consumer) return;
 
     let spatialLayer: number;
     let temporalLayer: number | undefined;
@@ -219,9 +213,9 @@ export class RemoteTrackPublication extends TrackPublication {
       }
     }
 
-    this.rpc
+    this._rpc
       .request('subscription.setPreferredLayers', {
-        subscriptionSid: this.consumer.id,
+        subscriptionSid: this._consumer.id,
         spatialLayer,
         temporalLayer,
       })

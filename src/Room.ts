@@ -51,7 +51,7 @@ import {
   type TokenRefreshedNotification,
   ConnectionQuality,
 } from './protocol/types';
-import type { RoomOptions, ReconnectPolicy } from './track/options';
+import type { RoomOptions, RoomConnectOptions } from './track/options';
 import { defaultAudioCaptureOptions, defaultVideoCaptureOptions } from './track/options';
 import type { DtlsFingerprint } from './protocol/types';
 import { Track } from './track/Track';
@@ -68,16 +68,6 @@ import type {
   StateUpdatedNotification,
   StateDeletedNotification,
 } from './protocol/types';
-
-/**
- * Options passed when connecting to a room.
- */
-export interface ConnectOptions {
-  /** Whether to auto-subscribe to published tracks (overrides RoomOptions). */
-  autoSubscribe?: boolean;
-  /** Additional RTCConfiguration for the peer connections. */
-  rtcConfig?: RTCConfiguration;
-}
 
 const log = getLogger('Room');
 
@@ -202,8 +192,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   private lastRtt = 0;
 
   private reconnectAttempts = 0;
-  private reconnectPolicy: ReconnectPolicy;
-  private _reconnectPolicy: DefaultReconnectPolicy;
+  private reconnectPolicy = new DefaultReconnectPolicy();
 
   private statsCollector?: StatsCollector;
   private pageLeaveHandler?: () => void;
@@ -213,7 +202,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   private _activeDeviceMap = new Map<MediaDeviceKind, string>();
   private dataStreamReceiver = new DataStreamReceiver();
   private _lastMessageTimestamp = 0;
-  private _rtcConfig?: RTCConfiguration;
+  private _connectOptions: RoomConnectOptions = {};
 
   constructor(options?: RoomOptions) {
     super();
@@ -229,12 +218,6 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._options.publishDefaults = {
       ...options?.publishDefaults,
     };
-    this.reconnectPolicy = options?.reconnectPolicy ?? {};
-    this._reconnectPolicy = new DefaultReconnectPolicy(
-      this.reconnectPolicy.maxRetries,
-      this.reconnectPolicy.initialDelay,
-      this.reconnectPolicy.maxDelay,
-    );
     this.signalClient = new SignalClient();
   }
 
@@ -467,14 +450,14 @@ export class Room extends TypedEmitter<RoomEvents> {
 
   // --- Connect ---
 
-  async connect(url: string, token?: string, options?: ConnectOptions): Promise<void> {
+  async connect(url: string, token?: string, options?: RoomConnectOptions): Promise<void> {
     if (this._state !== RoomState.Disconnected) {
       throw new Error(`Cannot connect: room state is ${this._state}`);
     }
 
     this.url = url;
     this.token = token ?? '';
-    this._rtcConfig = options?.rtcConfig;
+    this._connectOptions = options ?? {};
     this.setState(RoomState.Connecting);
 
     try {
@@ -487,7 +470,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
       const hasDtlsFingerprints = fingerprints.length > 0;
 
-      const autoSubscribe = options?.autoSubscribe ?? this._options.autoSubscribe ?? true;
+      const autoSubscribe = this._connectOptions.autoSubscribe ?? true;
 
       const joinRequest: JoinRequest = {
         room: {
@@ -511,7 +494,12 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.nodeId = joinResponse.serverInfo.nodeId;
       this.applyJoinResponse(joinResponse);
 
-      await this.transportManager.setup(url, joinResponse, hasDtlsFingerprints, this._rtcConfig);
+      await this.transportManager.setup(
+        url,
+        joinResponse,
+        hasDtlsFingerprints,
+        this._connectOptions.rtcConfig,
+      );
       this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -533,8 +521,6 @@ export class Room extends TypedEmitter<RoomEvents> {
         this._localParticipant.state = ParticipantState.Joined;
       }
 
-      console.log('readyResp', readyResp);
-
       const readyParticipants = this.applyReadySnapshot(readyResp);
 
       this.setState(RoomState.Connected);
@@ -542,7 +528,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
       this.startStatsCollector(joinResponse.statsInterval);
       this.reconnectAttempts = 0;
-      this._reconnectPolicy.reset();
+      this.reconnectPolicy.reset();
 
       this.setupDeviceChangeListener();
       this.wireLocalParticipantEvents();
@@ -580,19 +566,11 @@ export class Room extends TypedEmitter<RoomEvents> {
   // --- Reconnect ---
 
   private async attemptReconnect(): Promise<void> {
-    const maxRetries = this.reconnectPolicy.maxRetries ?? 10;
-
-    if (this.reconnectAttempts >= maxRetries) {
-      log.warn('Max reconnect attempts reached');
-      this.cleanup(DisconnectReason.StateMismatch);
-      return;
-    }
-
     this.setState(RoomState.Reconnecting);
     this.emit(RoomEvent.Reconnecting);
     this.reconnectAttempts++;
 
-    const delay = this._reconnectPolicy.nextRetryDelayInMs({
+    const delay = this.reconnectPolicy.nextRetryDelayInMs({
       retryCount: this.reconnectAttempts,
       elapsedMs: 0,
     });
@@ -602,7 +580,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       return;
     }
 
-    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxRetries})`);
+    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     await new Promise((r) => setTimeout(r, delay));
 
     if (this._state !== RoomState.Reconnecting) return;
@@ -616,7 +594,7 @@ export class Room extends TypedEmitter<RoomEvents> {
         room: { name: this._name },
         clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
         connectionSettings: {
-          autoSubscribe: this._options.autoSubscribe !== false,
+          autoSubscribe: this._connectOptions.autoSubscribe ?? true,
           adaptiveStream: !!this._options.adaptiveStream,
           dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
         },
@@ -633,7 +611,7 @@ export class Room extends TypedEmitter<RoomEvents> {
         await this.transportManager.restartIce(resp.iceParameters);
         this.setState(RoomState.Connected);
         this.reconnectAttempts = 0;
-        this._reconnectPolicy.reset();
+        this.reconnectPolicy.reset();
         this.emit(RoomEvent.Reconnected);
         log.info('ICE restart completed');
         return;
@@ -654,7 +632,12 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.nodeId = jr.serverInfo.nodeId;
       this.applyJoinResponse(jr);
 
-      await this.transportManager.setup(this.url, jr, hasDtlsFingerprints, this._rtcConfig);
+      await this.transportManager.setup(
+        this.url,
+        jr,
+        hasDtlsFingerprints,
+        this._connectOptions.rtcConfig,
+      );
       this.wireTransportEvents();
 
       if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -670,7 +653,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       this._localParticipant.init(this.rpcClient, this.transportManager);
       // Full reconnect replaces TransportManager; remote participants still held the closed instance.
       for (const [, rp] of this._remoteParticipants) {
-        rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
+        rp.rebindTransport(this.transportManager, this.rpcClient);
       }
 
       const readyReq: ReadyRequest = {
@@ -703,7 +686,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
       this.setState(RoomState.Connected);
       this.reconnectAttempts = 0;
-      this._reconnectPolicy.reset();
+      this.reconnectPolicy.reset();
       this.emit(RoomEvent.Reconnected);
       log.info('Reconnected successfully');
     } catch (err) {
@@ -1009,12 +992,9 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.handleTrackUnpublished(body);
     });
 
-    this.rpcClient.onNotification(
-      'dataTrack.published',
-      (body: DataTrackPublishedNotification) => {
-        this.handleDataTrackPublished(body);
-      },
-    );
+    this.rpcClient.onNotification('dataTrack.published', (body: DataTrackPublishedNotification) => {
+      this.handleDataTrackPublished(body);
+    });
 
     this.rpcClient.onNotification(
       'dataTrack.unpublished',
@@ -1194,8 +1174,12 @@ export class Room extends TypedEmitter<RoomEvents> {
       return existing;
     }
 
-    const rp = RemoteParticipant.fromInfo(info);
-    rp.init(this.transportManager, this.rpcClient, this.dataStreamReceiver);
+    const rp = new RemoteParticipant(info, {
+      transportManager: this.transportManager,
+      rpc: this.rpcClient,
+      autoSubscribe: this._connectOptions.autoSubscribe,
+      streamReceiver: this.dataStreamReceiver,
+    });
     this._remoteParticipants.set(info.sid, rp);
     this.wireRemoteParticipantEvents(rp);
     return rp;
@@ -1412,9 +1396,14 @@ export class Room extends TypedEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.publisherSid);
     if (!rp) {
       log.warn(`Subscription create for unknown publisher ${body.publisherSid}`);
-      const { RemoteParticipant: RP } = await import('./participant/RemoteParticipant');
-      const newRp = new RP(body.publisherSid, body.publisherSid);
-      newRp.init(this.transportManager, this.rpcClient);
+      const newRp = new RemoteParticipant(
+        { sid: body.publisherSid, identity: body.publisherSid, state: ParticipantState.Joined },
+        {
+          transportManager: this.transportManager,
+          rpc: this.rpcClient,
+          autoSubscribe: this._connectOptions.autoSubscribe,
+        },
+      );
       this._remoteParticipants.set(body.publisherSid, newRp);
       this.wireRemoteParticipantEvents(newRp);
       return newRp.handleSubscriptionCreate(body);

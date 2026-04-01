@@ -19,26 +19,47 @@ import { STREAM_DATA_LABEL, type DataStreamReceiver } from '../data-stream/DataS
 
 const log = getLogger('RemoteParticipant');
 
+export interface RemoteParticipantOptions {
+  transportManager: TransportManager;
+  rpc: RPCClient;
+  autoSubscribe?: boolean;
+  streamReceiver?: DataStreamReceiver;
+}
+
 export class RemoteParticipant extends Participant<RemoteTrackPublication> {
-  private transportManager!: TransportManager;
-  private rpc!: RPCClient;
+  private transportManager: TransportManager;
+  private rpc: RPCClient;
   private consumers = new Map<string, mediasoupTypes.Consumer>();
   private dataConsumers = new Map<string, mediasoupTypes.DataConsumer>();
   private streamReceiver?: DataStreamReceiver;
+  private autoSubscribe = true;
+
+  /** @internal */
+  constructor(info: ParticipantInfo, opts: RemoteParticipantOptions) {
+    super(info.sid, info.identity, info.name, info.metadata);
+    this.state = info.state;
+    this.transportManager = opts.transportManager;
+    this.rpc = opts.rpc;
+    this.autoSubscribe = opts.autoSubscribe ?? true;
+    this.streamReceiver = opts.streamReceiver;
+    if (info.attributes) this.attributes = { ...info.attributes };
+    if (info.groupId) this.groupId = info.groupId;
+
+    if (info.tracks) {
+      for (const trackInfo of info.tracks) {
+        this.addTrackPublication(trackInfo);
+      }
+    }
+  }
 
   get isLocal(): boolean {
     return false;
   }
 
-  /** @internal */
-  init(
-    transportManager: TransportManager,
-    rpc: RPCClient,
-    streamReceiver?: DataStreamReceiver,
-  ): void {
+  /** @internal — rebind after full reconnect replaces TransportManager. */
+  rebindTransport(transportManager: TransportManager, rpc: RPCClient): void {
     this.transportManager = transportManager;
     this.rpc = rpc;
-    this.streamReceiver = streamReceiver;
   }
 
   /** @internal */
@@ -74,20 +95,6 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
     return 1;
   }
 
-  static fromInfo(info: ParticipantInfo): RemoteParticipant {
-    const p = new RemoteParticipant(info.sid, info.identity, info.name, info.metadata);
-    p.state = info.state;
-    if (info.attributes) p.attributes = { ...info.attributes };
-    if (info.groupId) p.groupId = info.groupId;
-
-    if (info.tracks) {
-      for (const trackInfo of info.tracks) {
-        p.addTrackPublication(trackInfo);
-      }
-    }
-    return p;
-  }
-
   /** @internal */
   addTrackPublication(info: TrackInfo): RemoteTrackPublication {
     const pub = new RemoteTrackPublication({
@@ -97,6 +104,8 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
       source: info.source,
       muted: info.muted,
       info,
+      rpc: this.rpc,
+      subscribed: this.autoSubscribe,
     });
     this.addTrackPublicationToMaps(pub);
     this.emit(ParticipantEvent.TrackPublished, pub);
@@ -152,9 +161,7 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
 
     let pub = this.trackPublications.get(req.trackSid);
     if (pub) {
-      pub.track = track;
-      pub.consumer = consumer;
-      pub.rpc = this.rpc;
+      pub.attachSubscription(track, consumer, this.rpc);
     } else {
       pub = new RemoteTrackPublication({
         trackSid: req.trackSid,

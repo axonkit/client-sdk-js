@@ -655,13 +655,6 @@ export interface RoomOptions {
   dynacast?: boolean;
 
   /**
-   * Automatically subscribe to tracks when participants join.
-   *
-   * @defaultValue `true`
-   */
-  autoSubscribe?: boolean;
-
-  /**
    * Default capture options used when creating camera tracks.
    */
   videoCaptureDefaults?: VideoCaptureOptions;
@@ -678,11 +671,6 @@ export interface RoomOptions {
   publishDefaults?: TrackPublishDefaults;
 
   /**
-   * Policy parameters for automatic reconnection.
-   */
-  reconnectPolicy?: ReconnectPolicy;
-
-  /**
    * Room name sent in the JoinRequest for server-side routing and room
    * creation. Must match the `room` claim in the JWT token (if present).
    */
@@ -697,16 +685,28 @@ export interface RoomOptions {
 }
 
 /**
- * Policy parameters governing automatic reconnection behaviour.
+ * @internal
  */
-export interface ReconnectPolicy {
-  /** Maximum number of reconnection attempts. */
-  maxRetries?: number;
-  /** Maximum delay between reconnection attempts in milliseconds. */
-  maxDelay?: number;
-  /** Initial delay before the first reconnection attempt in milliseconds. */
-  initialDelay?: number;
+export interface InternalRoomConnectOptions {
+  /** autosubscribe to room tracks after joining, defaults to true */
+  autoSubscribe: boolean;
+
+  /** amount of time for PeerConnection to be established, defaults to 15s */
+  peerConnectionTimeout: number;
+
+  /**
+   * use to override any RTCConfiguration options.
+   */
+  rtcConfig?: RTCConfiguration;
+
+  /** specifies how often an initial join connection is allowed to retry (only applicable if server is not reachable) */
+  maxRetries: number;
 }
+
+/**
+ * Options for Room.connect()
+ */
+export interface RoomConnectOptions extends Partial<InternalRoomConnectOptions> {}
 
 // =========================================================================
 // Default values & presets

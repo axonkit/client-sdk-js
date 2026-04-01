@@ -33,11 +33,6 @@ export enum SubscriptionStatus {
   Unsubscribed = 'unsubscribed',
 }
 
-export enum PermissionStatus {
-  Allowed = 'allowed',
-  NotAllowed = 'not_allowed',
-}
-
 export class TrackPublication {
   trackSid: string;
   trackName: string;
@@ -128,12 +123,15 @@ export type ParticipantEvents<TPublication extends TrackPublication = TrackPubli
   [ParticipantEvent.LocalTrackUnpublished]: (publication: TPublication) => void;
   [ParticipantEvent.MetadataChanged]: (
     metadata: string | undefined,
-    participant: Participant<any, any>,
+    participant: Participant<TPublication>,
   ) => void;
-  [ParticipantEvent.NameChanged]: (name: string | undefined, participant: Participant<any, any>) => void;
+  [ParticipantEvent.NameChanged]: (
+    name: string | undefined,
+    participant: Participant<TPublication>,
+  ) => void;
   [ParticipantEvent.AttributesChanged]: (
     changedAttributes: Record<string, string>,
-    participant: Participant<any, any>,
+    participant: Participant<TPublication>,
   ) => void;
   [ParticipantEvent.IsSpeakingChanged]: (speaking: boolean) => void;
   [ParticipantEvent.ConnectionQualityChanged]: (quality: ConnectionQuality) => void;
@@ -148,8 +146,7 @@ export type ParticipantEvents<TPublication extends TrackPublication = TrackPubli
 
 export abstract class Participant<
   TPublication extends TrackPublication = TrackPublication,
-  TEvents extends ParticipantEvents<TPublication> = ParticipantEvents<TPublication>,
-> extends TypedEmitter<TEvents> {
+> extends TypedEmitter<ParticipantEvents<TPublication>> {
   sid: string;
   identity: string;
   name?: string;
@@ -287,12 +284,20 @@ export abstract class Participant<
 
     if (info.name !== undefined && info.name !== this.name) {
       this.name = info.name;
-      this.emitParticipantEvent(ParticipantEvent.NameChanged, this.name, this);
+      this.emitParticipantEvent(
+        ParticipantEvent.NameChanged,
+        this.name,
+        this as Participant<TPublication>,
+      );
     }
 
     if (info.metadata !== undefined && info.metadata !== this.metadata) {
       this.metadata = info.metadata;
-      this.emitParticipantEvent(ParticipantEvent.MetadataChanged, this.metadata, this);
+      this.emitParticipantEvent(
+        ParticipantEvent.MetadataChanged,
+        this.metadata,
+        this as Participant<TPublication>,
+      );
     }
 
     if (info.permission) {
@@ -312,7 +317,11 @@ export abstract class Participant<
       }
       this.attributes = { ...info.attributes };
       if (Object.keys(changed).length > 0) {
-        this.emitParticipantEvent(ParticipantEvent.AttributesChanged, changed, this);
+        this.emitParticipantEvent(
+          ParticipantEvent.AttributesChanged,
+          changed,
+          this as Participant<TPublication>,
+        );
       }
     }
 
