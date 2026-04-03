@@ -38,9 +38,9 @@ import type {
   VideoCaptureOptions,
   ScreenShareCaptureOptions,
   PublishCodecOptions,
-  RoomOptions,
   BackupVideoCodec,
 } from '../track/options';
+import type { RoomOptions } from '../room/options';
 import { BackupCodecPolicy, isBackupVideoCodec } from '../track/options';
 import { ParticipantEvent, TrackEvent } from '../events';
 import { getLogger } from '../utils/logger';

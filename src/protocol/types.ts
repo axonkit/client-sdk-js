@@ -228,6 +228,7 @@ export interface ClientInfo {
 export interface ConnectionSettings {
   autoSubscribe: boolean;
   adaptiveStream: boolean;
+  lastN?: number;
   dtlsFingerprints?: DtlsFingerprint[];
 }
 

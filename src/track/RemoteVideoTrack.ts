@@ -1,7 +1,7 @@
 import { RemoteTrack } from './RemoteTrack';
 import { TrackKind, TrackSource } from '../protocol/types';
 import { TrackEvent } from '../events';
-import type { AdaptiveStreamSettings } from './options';
+import type { AdaptiveStreamSettings } from '../room/options';
 import type { RPCClient } from '../signal/RPCClient';
 import { getLogger } from '../utils/logger';
 

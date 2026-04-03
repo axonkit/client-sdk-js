@@ -51,8 +51,9 @@ import {
   type TokenRefreshedNotification,
   ConnectionQuality,
 } from './protocol/types';
-import type { RoomOptions, RoomConnectOptions } from './track/options';
+import type { RoomOptions, RoomConnectOptions } from './room/options';
 import { defaultAudioCaptureOptions, defaultVideoCaptureOptions } from './track/options';
+import { TimeoutError } from './protocol/errors';
 import type { DtlsFingerprint } from './protocol/types';
 import { Track } from './track/Track';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
@@ -391,6 +392,25 @@ export class Room extends TypedEmitter<RoomEvents> {
     return resp.groups;
   }
 
+  // --- Pin Participant (lastN) ---
+
+  /**
+   * Pin a remote participant so their media tracks are always received,
+   * regardless of active speaker rotation. Pinned participants occupy
+   * lastN slots with highest priority.
+   */
+  async pinParticipant(participantSid: string): Promise<void> {
+    await this.rpcClient.request('participant.pin', { participantSid });
+  }
+
+  /**
+   * Unpin a previously pinned participant. Their media subscription will
+   * then be subject to active speaker rotation under lastN rules.
+   */
+  async unpinParticipant(participantSid: string): Promise<void> {
+    await this.rpcClient.request('participant.unpin', { participantSid });
+  }
+
   // --- Device Management ---
 
   /**
@@ -460,73 +480,15 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._connectOptions = options ?? {};
     this.setState(RoomState.Connecting);
 
+    const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
+
     try {
-      if (this.transportManager) {
-        this.transportManager.close();
-      }
-      this.transportManager = new TransportManager(this.signalClient);
-      this.rpcClient = new RPCClient();
-
-      const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
-      const hasDtlsFingerprints = fingerprints.length > 0;
-
-      const autoSubscribe = this._connectOptions.autoSubscribe ?? true;
-
-      const joinRequest: JoinRequest = {
-        room: {
-          name: this._options.roomName ?? '',
-          metadata: this._options.metadata,
-        },
-        clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
-        connectionSettings: {
-          autoSubscribe,
-          adaptiveStream: !!this._options.adaptiveStream,
-          dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
-        },
-        reconnect: false,
-        participantSid: '',
-        nodeId: '',
-        token: this.token || undefined,
-      };
-
-      const { response: resp } = await this.signalClient.join(url, joinRequest);
-      const joinResponse = resp as JoinResponse;
-      this.nodeId = joinResponse.serverInfo.nodeId;
-      this.applyJoinResponse(joinResponse);
-
-      await this.transportManager.setup(
-        url,
-        joinResponse,
-        hasDtlsFingerprints,
-        this._connectOptions.rtcConfig,
-      );
-      this.wireTransportEvents();
-
-      if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
-        this.rpcClient.bind(
-          this.transportManager.signalDataProducer,
-          this.transportManager.signalDataConsumer,
-        );
-      }
-
-      this.registerRPCHandlers();
-      this.registerNotificationHandlers();
-
-      const readyReq: ReadyRequest = {
-        rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
-      };
-      const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
-
-      if (this._localParticipant) {
-        this._localParticipant.state = ParticipantState.Joined;
-      }
-
-      const readyParticipants = this.applyReadySnapshot(readyResp);
+      const connectResult = await this.withTimeout(this.performConnect(url), timeoutMs);
 
       this.setState(RoomState.Connected);
-      this.scheduleReadySnapshotReplay(readyParticipants);
-      this.startHeartbeat(joinResponse.pingInterval, joinResponse.pingTimeout);
-      this.startStatsCollector(joinResponse.statsInterval);
+      this.scheduleReadySnapshotReplay(connectResult.readyParticipants);
+      this.startHeartbeat(connectResult.pingInterval, connectResult.pingTimeout);
+      this.startStatsCollector(connectResult.statsInterval);
       this.reconnectAttempts = 0;
       this.reconnectPolicy.reset();
 
@@ -539,9 +501,82 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.setupPageLeaveHandler();
     } catch (err) {
       this.setState(RoomState.Disconnected);
-      this.transportManager.close();
+      this.transportManager?.close();
       throw err;
     }
+  }
+
+  private async performConnect(url: string) {
+    if (this.transportManager) {
+      this.transportManager.close();
+    }
+    this.transportManager = new TransportManager(this.signalClient);
+    this.rpcClient = new RPCClient();
+
+    const fingerprints: DtlsFingerprint[] = await this.transportManager.generateCertificate();
+    const hasDtlsFingerprints = fingerprints.length > 0;
+
+    const autoSubscribe = this._connectOptions.autoSubscribe ?? true;
+    const lastN = this._options.lastN ?? 0;
+
+    const joinRequest: JoinRequest = {
+      room: {
+        name: this._options.roomName ?? '',
+        metadata: this._options.metadata,
+      },
+      clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
+      connectionSettings: {
+        autoSubscribe,
+        adaptiveStream: !!this._options.adaptiveStream,
+        lastN: lastN > 0 ? lastN : undefined,
+        dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
+      },
+      reconnect: false,
+      participantSid: '',
+      nodeId: '',
+      token: this.token || undefined,
+    };
+
+    const { response: resp } = await this.signalClient.join(url, joinRequest);
+    const joinResponse = resp as JoinResponse;
+    this.nodeId = joinResponse.serverInfo.nodeId;
+    this.applyJoinResponse(joinResponse);
+
+    await this.transportManager.setup(
+      url,
+      joinResponse,
+      hasDtlsFingerprints,
+      this._connectOptions.rtcConfig,
+    );
+    this.wireTransportEvents();
+
+    if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
+      this.rpcClient.bind(
+        this.transportManager.signalDataProducer,
+        this.transportManager.signalDataConsumer,
+      );
+    }
+
+    this.registerRPCHandlers();
+    this.registerNotificationHandlers();
+
+    const readyReq: ReadyRequest = {
+      rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
+    };
+    const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+
+    if (this._localParticipant) {
+      this._localParticipant.state = ParticipantState.Joined;
+    }
+
+    const readyParticipants = this.applyReadySnapshot(readyResp);
+
+    return {
+      readyParticipants,
+      pingInterval: joinResponse.pingInterval,
+      pingTimeout: joinResponse.pingTimeout,
+      statsInterval: joinResponse.statsInterval,
+    };
   }
 
   /**
@@ -585,114 +620,134 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     if (this._state !== RoomState.Reconnecting) return;
 
+    const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
+
     try {
-      const fingerprints = this.transportManager.getDtlsFingerprints();
-      const hasDtlsFingerprints = fingerprints.length > 0;
-      const savedCert = this.transportManager.getCertificate();
-
-      const joinRequest: JoinRequest = {
-        room: { name: this._name },
-        clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
-        connectionSettings: {
-          autoSubscribe: this._connectOptions.autoSubscribe ?? true,
-          adaptiveStream: !!this._options.adaptiveStream,
-          dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
-        },
-        reconnect: true,
-        participantSid: this.participantSid,
-        nodeId: this.nodeId,
-        token: this.token || undefined,
-        refreshToken: this._refreshToken || undefined,
-      };
-
-      const { response: resp } = await this.signalClient.join(this.url, joinRequest);
-
-      if (isReconnectResponse(resp)) {
-        await this.transportManager.restartIce(resp.iceParameters);
-        this.setState(RoomState.Connected);
-        this.reconnectAttempts = 0;
-        this.reconnectPolicy.reset();
-        this.emit(RoomEvent.Reconnected);
-        log.info('ICE restart completed');
-        return;
-      }
-
-      const jr = resp as JoinResponse;
-      this.stopHeartbeat();
-      this.stopStatsCollector();
-      this.rpcClient.close();
-      this.transportManager.close();
-
-      this.rpcClient = new RPCClient();
-      this.transportManager = new TransportManager(this.signalClient);
-      if (savedCert) {
-        this.transportManager.setCertificate(savedCert);
-      }
-
-      this.nodeId = jr.serverInfo.nodeId;
-      this.applyJoinResponse(jr);
-
-      await this.transportManager.setup(
-        this.url,
-        jr,
-        hasDtlsFingerprints,
-        this._connectOptions.rtcConfig,
-      );
-      this.wireTransportEvents();
-
-      if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
-        this.rpcClient.bind(
-          this.transportManager.signalDataProducer,
-          this.transportManager.signalDataConsumer,
-        );
-      }
-
-      this.registerRPCHandlers();
-      this.registerNotificationHandlers();
-
-      this._localParticipant.init(this.rpcClient, this.transportManager);
-      // Full reconnect replaces TransportManager; remote participants still held the closed instance.
-      for (const [, rp] of this._remoteParticipants) {
-        rp.rebindTransport(this.transportManager, this.rpcClient);
-      }
-
-      const readyReq: ReadyRequest = {
-        rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
-        syncState: this.buildSyncState(),
-      };
-      const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
-
-      this.applyReadySnapshot(readyResp);
-
-      // Replay messages missed during disconnect.
-      if (readyResp.messages) {
-        for (const m of readyResp.messages) {
-          this.handleMessage(m);
-        }
-      }
-
-      // Sync shared state from server.
-      if (readyResp.sharedState) {
-        this._sharedState.clear();
-        for (const [k, v] of Object.entries(readyResp.sharedState)) {
-          this._sharedState.set(k, v);
-        }
-      }
-
-      await this._localParticipant.republishAllTracks();
-
-      this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
-      this.startStatsCollector(jr.statsInterval);
-
-      this.setState(RoomState.Connected);
-      this.reconnectAttempts = 0;
-      this.reconnectPolicy.reset();
-      this.emit(RoomEvent.Reconnected);
-      log.info('Reconnected successfully');
+      await this.withTimeout(this.performReconnect(), timeoutMs);
     } catch (err) {
       log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
       this.attemptReconnect();
     }
+  }
+
+  private async performReconnect(): Promise<void> {
+    const fingerprints = this.transportManager.getDtlsFingerprints();
+    const hasDtlsFingerprints = fingerprints.length > 0;
+    const savedCert = this.transportManager.getCertificate();
+
+    const reconnectLastN = this._options.lastN ?? 0;
+
+    const joinRequest: JoinRequest = {
+      room: { name: this._name },
+      clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
+      connectionSettings: {
+        autoSubscribe: this._connectOptions.autoSubscribe ?? true,
+        adaptiveStream: !!this._options.adaptiveStream,
+        lastN: reconnectLastN > 0 ? reconnectLastN : undefined,
+        dtlsFingerprints: hasDtlsFingerprints ? fingerprints : undefined,
+      },
+      reconnect: true,
+      participantSid: this.participantSid,
+      nodeId: this.nodeId,
+      token: this.token || undefined,
+      refreshToken: this._refreshToken || undefined,
+    };
+
+    const { response: resp } = await this.signalClient.join(this.url, joinRequest);
+
+    if (isReconnectResponse(resp)) {
+      await this.transportManager.restartIce(resp.iceParameters);
+      this.setState(RoomState.Connected);
+      this.reconnectAttempts = 0;
+      this.reconnectPolicy.reset();
+      this.emit(RoomEvent.Reconnected);
+      log.info('ICE restart completed');
+      return;
+    }
+
+    const jr = resp as JoinResponse;
+    this.stopHeartbeat();
+    this.stopStatsCollector();
+    this.rpcClient.close();
+    this.transportManager.close();
+
+    this.rpcClient = new RPCClient();
+    this.transportManager = new TransportManager(this.signalClient);
+    if (savedCert) {
+      this.transportManager.setCertificate(savedCert);
+    }
+
+    this.nodeId = jr.serverInfo.nodeId;
+    this.applyJoinResponse(jr);
+
+    await this.transportManager.setup(
+      this.url,
+      jr,
+      hasDtlsFingerprints,
+      this._connectOptions.rtcConfig,
+    );
+    this.wireTransportEvents();
+
+    if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
+      this.rpcClient.bind(
+        this.transportManager.signalDataProducer,
+        this.transportManager.signalDataConsumer,
+      );
+    }
+
+    this.registerRPCHandlers();
+    this.registerNotificationHandlers();
+
+    this._localParticipant.init(this.rpcClient, this.transportManager);
+    for (const [, rp] of this._remoteParticipants) {
+      rp.rebindTransport(this.transportManager, this.rpcClient);
+    }
+
+    const readyReq: ReadyRequest = {
+      rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
+      syncState: this.buildSyncState(),
+    };
+    const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+
+    this.applyReadySnapshot(readyResp);
+
+    if (readyResp.messages) {
+      for (const m of readyResp.messages) {
+        this.handleMessage(m);
+      }
+    }
+
+    if (readyResp.sharedState) {
+      this._sharedState.clear();
+      for (const [k, v] of Object.entries(readyResp.sharedState)) {
+        this._sharedState.set(k, v);
+      }
+    }
+
+    await this._localParticipant.republishAllTracks();
+
+    this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
+    this.startStatsCollector(jr.statsInterval);
+
+    this.setState(RoomState.Connected);
+    this.reconnectAttempts = 0;
+    this.reconnectPolicy.reset();
+    this.emit(RoomEvent.Reconnected);
+    log.info('Reconnected successfully');
+  }
+
+  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    if (ms <= 0) return promise;
+    let timer: ReturnType<typeof setTimeout>;
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new TimeoutError(`Connection timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer!));
   }
 
   private buildSyncState(): SyncState {

@@ -34,11 +34,16 @@ export {
 // Track Processor
 export type { TrackProcessor, ProcessorOptions } from './track/processor/types';
 
-// Options — types
+// Room options — types
 export type {
   RoomOptions,
   RoomConnectOptions,
   InternalRoomConnectOptions,
+  AdaptiveStreamSettings,
+} from './room/options';
+
+// Track options — types
+export type {
   TrackPublishDefaults,
   TrackPublishOptions,
   DataPublishOptions,
@@ -51,7 +56,6 @@ export type {
   AudioPreset,
   AudioOutputOptions,
   PublishCodecOptions,
-  AdaptiveStreamSettings,
   CreateLocalTracksOptions,
   ScalabilityMode,
   VideoCodec,
