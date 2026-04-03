@@ -1,6 +1,6 @@
 import type {
   Message,
-  ConnectOptions,
+  RoomConnectOptions,
   RoomOptions,
   ScalabilityMode,
   VideoCaptureOptions,
@@ -142,7 +142,7 @@ const appActions = {
       }
     }
 
-    const connectOpts: ConnectOptions = {
+    const connectOpts: RoomConnectOptions = {
       autoSubscribe,
     };
     if (forceTURN) {
@@ -159,7 +159,7 @@ const appActions = {
     url: string,
     token: string,
     roomOptions?: RoomOptions,
-    connectOptions?: ConnectOptions,
+    connectOptions?: RoomConnectOptions,
     shouldPublish?: boolean,
   ): Promise<Room | undefined> => {
     const room = new Room(roomOptions);
