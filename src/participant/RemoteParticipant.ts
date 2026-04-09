@@ -45,10 +45,8 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
     if (info.attributes) this.attributes = { ...info.attributes };
     if (info.groupId) this.groupId = info.groupId;
 
-    if (info.tracks) {
-      for (const trackInfo of info.tracks) {
-        this.addTrackPublication(trackInfo);
-      }
+    for (const trackInfo of info.tracks ?? []) {
+      this.addTrackPublication(trackInfo);
     }
   }
 
@@ -162,6 +160,7 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
     let pub = this.trackPublications.get(req.trackSid);
     if (pub) {
       pub.attachSubscription(track, consumer, this.rpc);
+      pub.muted = req.trackMuted;
     } else {
       pub = new RemoteTrackPublication({
         trackSid: req.trackSid,
