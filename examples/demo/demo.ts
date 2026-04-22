@@ -631,7 +631,7 @@ function handleParticipantMediaClick(this: HTMLElement, ev: Event) {
   const participant = resolveParticipantInRoom(room, identity);
   if (!participant) return;
 
-  const videoPub = participant.getTrackPublication(TrackSource.Camera);
+  const videoPub = getPrimaryPublication(participant, TrackSource.Camera, 'video');
   const canvasPub = getCanvasTrackPublication(participant);
   const camOk =
     videoPub && videoPub.isSubscribed && !videoPub.isMuted && Boolean(videoPub.videoTrack);
@@ -717,9 +717,9 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
   }
   const micElm = container.querySelector(`#mic-${identity}`)!;
   const signalElm = container.querySelector(`#signal-${identity}`)!;
-  const videoPub = participant.getTrackPublication(TrackSource.Camera);
+  const videoPub = getPrimaryPublication(participant, TrackSource.Camera, 'video');
   const canvasPub = getCanvasTrackPublication(participant);
-  const micPub = participant.getTrackPublication(TrackSource.Microphone);
+  const micPub = getPrimaryPublication(participant, TrackSource.Microphone, 'audio');
 
   if (participant.isSpeaking) {
     div!.classList.add('speaking');
@@ -911,6 +911,28 @@ function clearScreenShareElement(videoElm: HTMLVideoElement): void {
 
 function getCanvasTrackPublication(participant: Participant): TrackPublication | undefined {
   return participant.getTrackPublicationByName(CANVAS_TRACK_NAME);
+}
+
+/**
+ * Pick a "primary" publication for rendering. WHIP ingress (and any other
+ * publisher that doesn't tag its tracks) ships with `TrackSource.Unknown`, so
+ * after the preferred source lookup fails we fall back to the first non-canvas
+ * publication of the requested kind.
+ */
+function getPrimaryPublication(
+  participant: Participant,
+  preferred: TrackSource,
+  kind: 'audio' | 'video',
+): TrackPublication | undefined {
+  const pub = participant.getTrackPublication(preferred);
+  if (pub) return pub;
+  for (const p of participant.getTrackPublications()) {
+    if (p.kind !== kind) continue;
+    if (p.source !== TrackSource.Unknown) continue;
+    if (kind === 'video' && p.trackName === CANVAS_TRACK_NAME) continue;
+    return p;
+  }
+  return undefined;
 }
 
 /** Demo canvas draws in a worker (OffscreenCanvas); main thread only runs captureStream. */

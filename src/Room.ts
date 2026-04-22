@@ -1429,7 +1429,8 @@ export class Room extends TypedEmitter<RoomEvents> {
       reason === DisconnectReason.ClientInitiated ||
       reason === DisconnectReason.DuplicateIdentity ||
       reason === DisconnectReason.ParticipantRemoved ||
-      reason === DisconnectReason.RoomDeleted;
+      reason === DisconnectReason.RoomDeleted ||
+      reason === DisconnectReason.ServerShutdown;
 
     if (this._state === RoomState.Reconnecting) {
       if (isHardFailure) {
