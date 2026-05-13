@@ -1,0 +1,113 @@
+name: Publish to npm
+
+# Triggered when a tag like v0.1.0, v1.2.3, v1.0.0-rc.1 is pushed.
+# Workflow:
+#   1. Build with rollup (no source maps, tests excluded via tsconfig.build.json).
+#   2. Verify dist contents are clean (no *.map, no test artifacts).
+#   3. Publish to npm with Trusted Publishing (OIDC) — no token stored.
+#
+# Authentication:
+#   Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN secret required.
+#   Pre-requisite (one-time): on npmjs.com, open the package's
+#     "Settings -> Trusted Publisher" and register this GitHub repo +
+#     workflow filename ("publish.yml").
+#
+# Note: This is a private repository, so `--provenance` is NOT used
+#   (npm provenance attestation only works for public source repos).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run npm publish --dry-run instead of publishing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write  # required for Trusted Publishing (OIDC)
+
+jobs:
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@axonkit'
+          cache: 'pnpm'
+
+      - name: Upgrade npm (Trusted Publishing requires >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+        if: github.event_name == 'push'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build:clean
+
+      - name: Sanity-check dist contents (no source maps, no tests)
+        run: |
+          set -e
+          test -f dist/axonkit-client.esm.js
+          test -f dist/axonkit-client.umd.js
+          test -f dist/index.d.ts
+          if find dist -name '*.map' | grep .; then
+            echo "::error::Source map files found in dist/ — must not be published"
+            exit 1
+          fi
+          if find dist -name '*.test.*' -o -name '*.spec.*' | grep .; then
+            echo "::error::Test artifacts found in dist/ — must not be published"
+            exit 1
+          fi
+          echo "--- dist tree ---"
+          find dist -type f | sort
+
+      - name: Show tarball preview
+        run: npm pack --dry-run
+
+      - name: Publish (dry-run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: npm publish --access public --dry-run
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: npm publish --access public
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true

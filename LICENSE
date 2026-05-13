@@ -1,0 +1,85 @@
+AxonKit Client SDK License Agreement
+
+Copyright (c) 2026 axonkit. All rights reserved.
+
+1. Definitions
+   1.1 "SDK" means this software package and all source code, compiled
+       artifacts, type declarations, documentation, and related files
+       distributed under this Agreement.
+   1.2 "Service" means the AxonKit hosted services, APIs, and backend
+       systems operated by axonkit.
+   1.3 "You" (or "Licensee") means the individual or legal entity
+       exercising rights under this Agreement.
+
+2. License Grant
+   Subject to Your compliance with this Agreement, axonkit grants You a
+   limited, worldwide, non-exclusive, non-transferable, non-sublicensable,
+   revocable license to:
+     (a) install and use the SDK in source or compiled form solely for
+         the purpose of developing, testing, and operating applications
+         that connect to and interact with the Service; and
+     (b) redistribute the SDK as an integrated, non-separable component
+         of Your applications that use the Service, provided that the SDK
+         is not made available as a standalone product.
+
+3. Restrictions
+   You shall not, and shall not permit any third party to:
+     (a) use the SDK to connect to, interoperate with, or build any
+         service other than the Service;
+     (b) reverse engineer, decompile, disassemble, or otherwise attempt
+         to derive the source code of the SDK, except to the extent such
+         restriction is prohibited by applicable law;
+     (c) modify, translate, or create derivative works of the SDK for
+         the purpose of distributing them as a standalone library or to
+         third parties not using the Service;
+     (d) remove, alter, or obscure any copyright, trademark, or other
+         proprietary notices contained in the SDK;
+     (e) use the SDK to build, train, or develop a competing product or
+         service that is substantially similar to the Service; or
+     (f) sublicense, sell, rent, lease, lend, or otherwise transfer the
+         SDK to any third party except as expressly permitted in
+         Section 2(b).
+
+4. Ownership
+   The SDK is licensed, not sold. axonkit and its licensors retain all
+   right, title, and interest in and to the SDK, including all
+   intellectual property rights. No rights are granted to You other
+   than those expressly set forth in this Agreement.
+
+5. Third-Party Components
+   The SDK may include or depend on third-party open source software,
+   each of which is subject to its own license terms. Such third-party
+   licenses are not affected by this Agreement.
+
+6. Termination
+   This Agreement is effective until terminated. axonkit may terminate
+   this Agreement immediately upon notice if You breach any term of this
+   Agreement. Upon termination, You must cease all use of the SDK and
+   destroy all copies in Your possession or control. Sections 3, 4, 7,
+   8, and 9 survive termination.
+
+7. Disclaimer of Warranty
+   THE SDK IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF
+   ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+   TITLE, AND NON-INFRINGEMENT. axonkit DOES NOT WARRANT THAT THE SDK
+   WILL BE ERROR-FREE OR UNINTERRUPTED.
+
+8. Limitation of Liability
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL
+   axonkit OR ITS AFFILIATES BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+   SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS,
+   REVENUE, DATA, OR USE, ARISING OUT OF OR IN CONNECTION WITH THIS
+   AGREEMENT OR THE SDK, WHETHER IN CONTRACT, TORT, OR OTHERWISE, EVEN
+   IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+9. Governing Law
+   This Agreement shall be governed by and construed in accordance with
+   applicable laws, without regard to its conflict of law provisions.
+
+10. Entire Agreement
+    This Agreement constitutes the entire agreement between You and
+    axonkit regarding the SDK and supersedes all prior or contemporaneous
+    understandings.
+
+For licensing inquiries, please contact: <jiyeyuran@gmail.com>

@@ -18,19 +18,25 @@ export default {
     {
       file: 'dist/axonkit-client.esm.js',
       format: 'es',
-      sourcemap: true,
+      sourcemap: false,
     },
     {
       file: 'dist/axonkit-client.umd.js',
       format: 'umd',
       name: 'AxonKit',
-      sourcemap: true,
+      sourcemap: false,
     },
   ],
   plugins: [
     resolve({ browser: true, preferBuiltins: false }),
     commonjs(),
-    typescript({ tsconfig: './tsconfig.json', declaration: true, declarationDir: 'dist' }),
+    typescript({
+      tsconfig: './tsconfig.build.json',
+      declaration: true,
+      declarationDir: 'dist',
+      sourceMap: false,
+      inlineSources: false,
+    }),
     terser(),
   ],
 };

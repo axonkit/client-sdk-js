@@ -2,6 +2,10 @@
 
 AxonKit JavaScript/TypeScript Client SDK for real-time communication, built on top of [mediasoup-client](https://github.com/versatica/mediasoup-client).
 
+> **License**: This SDK is proprietary software licensed exclusively for use
+> with the AxonKit Service. See [LICENSE](./LICENSE) for the full terms.
+> For commercial inquiries, contact <jiyeyuran@gmail.com>.
+
 ## Installation
 
 ```bash

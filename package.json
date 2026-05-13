@@ -7,7 +7,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "src"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rollup -c",
@@ -19,7 +20,9 @@
     "test": "vitest run src",
     "dev": "vite examples/demo",
     "size": "size-limit",
-    "clean": "rm -rf dist docs"
+    "clean": "rm -rf dist docs",
+    "verify:dist": "test -f dist/axonkit-client.esm.js && test -f dist/axonkit-client.umd.js && test -f dist/index.d.ts && ! ls dist/**/*.map 2>/dev/null | grep -q . && echo 'dist OK (no source maps shipped)'",
+    "prepublishOnly": "npm run clean && npm run build && npm run verify:dist"
   },
   "keywords": [
     "webrtc",
@@ -28,7 +31,22 @@
     "realtime"
   ],
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "axonkit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/axonkit/client-sdk-js.git"
+  },
+  "homepage": "https://github.com/axonkit/client-sdk-js#readme",
+  "bugs": {
+    "url": "https://github.com/axonkit/client-sdk-js/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "sideEffects": false,
   "dependencies": {
     "async-mutex": "^0.5.0",

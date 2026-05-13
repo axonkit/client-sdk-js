@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": false,
+    "inlineSources": false
+  },
+  "include": ["src"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "examples",
+    "src/test/**",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts"
+  ]
+}
