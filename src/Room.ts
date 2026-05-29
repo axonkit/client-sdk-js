@@ -57,6 +57,7 @@ import { TimeoutError } from './protocol/errors';
 import type { DtlsFingerprint } from './protocol/types';
 import { Track } from './track/Track';
 import { LocalVideoTrack } from './track/LocalVideoTrack';
+import { LocalAudioTrack } from './track/LocalAudioTrack';
 import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
 import { StatsCollector } from './stats/StatsCollector';
@@ -435,15 +436,14 @@ export class Room extends TypedEmitter<RoomEvents> {
   async switchActiveDevice(kind: MediaDeviceKind, deviceId: string, exact = true): Promise<void> {
     this._activeDeviceMap.set(kind, deviceId);
     if (!this._localParticipant) return;
-    const constraintValue = exact ? { exact: deviceId } : deviceId;
     for (const [, pub] of this._localParticipant.trackPublications) {
       const track = pub.track;
       if (!track || !(track instanceof LocalTrack)) continue;
 
-      if (kind === 'audioinput' && track.kind === 'audio') {
-        await (track as any).setDeviceId?.(constraintValue);
-      } else if (kind === 'videoinput' && track.kind === 'video') {
-        await (track as any).setDeviceId?.(constraintValue);
+      if (kind === 'audioinput' && track instanceof LocalAudioTrack) {
+        await track.setDeviceId(deviceId, exact);
+      } else if (kind === 'videoinput' && track instanceof LocalVideoTrack) {
+        await track.setDeviceId(deviceId, exact);
       } else if (kind === 'audiooutput') {
         for (const el of track.attachedElements ?? []) {
           if (typeof (el as any).setSinkId === 'function') {
@@ -589,11 +589,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     log.info('Disconnecting from room');
 
-    try {
-      await this.rpcClient.request('leave', { reason: 'client_initiated' }).catch(() => {});
-    } catch {
-      // ignore
-    }
+    await this.rpcClient?.request('leave', { reason: 'client_initiated' }).catch(() => {});
 
     this.cleanup(DisconnectReason.ClientInitiated, stopTracks);
   }
@@ -709,7 +705,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     };
     const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
 
-    this.applyReadySnapshot(readyResp);
+    this.applyReadySnapshot(readyResp, true);
 
     if (readyResp.messages) {
       for (const m of readyResp.messages) {
@@ -1173,32 +1169,55 @@ export class Room extends TypedEmitter<RoomEvents> {
     );
   }
 
-  private applyReadySnapshot(readyResp: ReadyResponse): RemoteParticipant[] {
+  /**
+   * @param emitEvents - When `true` (full reconnect), participant join/leave and
+   *   track-published events are emitted live for the snapshot diff. When `false`
+   *   (initial connect), emission is deferred to {@link scheduleReadySnapshotReplay}.
+   */
+  private applyReadySnapshot(readyResp: ReadyResponse, emitEvents = false): RemoteParticipant[] {
     if (readyResp.room) {
       this._roomInfo = readyResp.room;
       this._name = readyResp.room.name;
     }
 
-    const readyParticipants = this.replaceRemoteParticipants(readyResp.otherParticipants);
+    const readyParticipants = this.replaceRemoteParticipants(
+      readyResp.otherParticipants,
+      emitEvents,
+    );
     this.replaceGroups(readyResp.groups);
     this.replaceSharedState(readyResp.sharedState);
     return readyParticipants;
   }
 
-  private replaceRemoteParticipants(participants?: ParticipantInfo[]): RemoteParticipant[] {
+  private replaceRemoteParticipants(
+    participants?: ParticipantInfo[],
+    emitEvents = false,
+  ): RemoteParticipant[] {
     if (!participants) return [];
 
     const nextSids = new Set<string>();
     const readyParticipants: RemoteParticipant[] = [];
     for (const info of participants) {
       nextSids.add(info.sid);
-      readyParticipants.push(this.upsertRemoteParticipant(info));
+      const existed = this._remoteParticipants.has(info.sid);
+      const rp = this.upsertRemoteParticipant(info);
+      readyParticipants.push(rp);
+
+      if (emitEvents && !existed) {
+        this.emit(RoomEvent.ParticipantJoined, rp);
+        for (const [, pub] of rp.trackPublications) {
+          this.emit(RoomEvent.TrackPublished, pub, rp);
+        }
+      }
     }
 
     for (const [sid, rp] of this._remoteParticipants) {
       if (nextSids.has(sid)) continue;
       rp.closeAll();
       this._remoteParticipants.delete(sid);
+      if (emitEvents) {
+        this.emit(RoomEvent.ParticipantLeft, rp);
+      }
     }
 
     return readyParticipants;
@@ -1305,18 +1324,18 @@ export class Room extends TypedEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.participantSid);
     if (!rp) return;
 
-    const pub = rp.addTrackPublication(body.track);
-    this.emit(RoomEvent.TrackPublished, pub, rp);
+    // addTrackPublication emits ParticipantEvent.TrackPublished, which is
+    // forwarded to RoomEvent.TrackPublished by wireRemoteParticipantEvents.
+    rp.addTrackPublication(body.track);
   }
 
   private handleTrackUnpublished(body: TrackUnpublishedNotification): void {
     const rp = this._remoteParticipants.get(body.participantSid);
     if (!rp) return;
 
-    const pub = rp.removeTrackPublication(body.trackSid);
-    if (pub) {
-      this.emit(RoomEvent.TrackUnpublished, pub, rp);
-    }
+    // removeTrackPublication emits the corresponding participant events,
+    // which are forwarded to RoomEvent by wireRemoteParticipantEvents.
+    rp.removeTrackPublication(body.trackSid);
   }
 
   private handleDataTrackPublished(body: DataTrackPublishedNotification): void {
@@ -1337,11 +1356,9 @@ export class Room extends TypedEmitter<RoomEvents> {
     const rp = this._remoteParticipants.get(body.participantSid);
     if (!rp) return;
 
+    // setTrackMuted emits ParticipantEvent.TrackMuted/TrackUnmuted, which is
+    // forwarded to RoomEvent by wireRemoteParticipantEvents.
     rp.setTrackMuted(body.trackSid, body.muted);
-    const pub = rp.getTrackPublicationBySid(body.trackSid);
-    if (pub) {
-      this.emit(body.muted ? RoomEvent.TrackMuted : RoomEvent.TrackUnmuted, pub, rp);
-    }
   }
 
   /** Video dynacast: per-layer quality change + producer pause/resume. */
@@ -1563,8 +1580,8 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     this.stopHeartbeat();
     this.stopStatsCollector();
-    this.rpcClient.close();
-    this.transportManager.close();
+    this.rpcClient?.close();
+    this.transportManager?.close();
 
     this._localParticipant?.closeAll(!stopTracks);
     for (const [, rp] of this._remoteParticipants) {

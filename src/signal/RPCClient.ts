@@ -78,9 +78,15 @@ export class RPCClient extends TypedEmitter<RPCEvents> {
 
       this.pending.set(logId, { resolve, reject, timer, method });
 
-      const encoded = encode(msg);
-      this.sendDC!.send(encoded);
-      this.lastSentAt = Date.now();
+      try {
+        const encoded = encode(msg);
+        this.sendDC!.send(encoded);
+        this.lastSentAt = Date.now();
+      } catch (err) {
+        clearTimeout(timer);
+        this.pending.delete(logId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
     });
   }
 

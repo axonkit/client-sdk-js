@@ -59,8 +59,9 @@ export class LocalAudioTrack extends LocalTrack {
     }
   }
 
-  async setDeviceId(deviceId: string): Promise<void> {
-    const newConstraints = { ...(this.constraints ?? {}), deviceId: { exact: deviceId } };
+  async setDeviceId(deviceId: string, exact = true): Promise<void> {
+    const constraint = exact ? { exact: deviceId } : deviceId;
+    const newConstraints = { ...(this.constraints ?? {}), deviceId: constraint };
 
     if (this.isMuted) {
       log.debug('track is muted, deferring device change to unmute');

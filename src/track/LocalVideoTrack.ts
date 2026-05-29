@@ -164,7 +164,8 @@ export class LocalVideoTrack extends LocalTrack {
     }
   }
 
-  async setDeviceId(deviceId: string): Promise<void> {
-    await this.restart({ ...(this.constraints ?? {}), deviceId: { exact: deviceId } });
+  async setDeviceId(deviceId: string, exact = true): Promise<void> {
+    const constraint = exact ? { exact: deviceId } : deviceId;
+    await this.restart({ ...(this.constraints ?? {}), deviceId: constraint });
   }
 }
