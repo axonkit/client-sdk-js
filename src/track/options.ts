@@ -607,7 +607,6 @@ export interface CreateLocalTracksOptions {
   video?: boolean | VideoCaptureOptions;
 }
 
-
 // =========================================================================
 // Default values & presets
 // =========================================================================

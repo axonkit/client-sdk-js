@@ -199,7 +199,13 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
     });
 
     track.startMonitor();
-    this.emit(ParticipantEvent.TrackSubscribed, track, publication);
+
+    // Defer until after subscription.create RES is sent. emitTrackUpdate
+    // (setPreferredLayers) must not race ahead of the server registering the
+    // subscription, which happens only once this handler's response is received.
+    setTimeout(() => {
+      this.emit(ParticipantEvent.TrackSubscribed, track, publication);
+    }, 0);
 
     log.info(`Subscribed to track ${req.trackSid} via subscription ${req.subscriptionSid}`);
     return { ok: true };
