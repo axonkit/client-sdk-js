@@ -99,8 +99,22 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: npm publish --access public --dry-run
 
-      - name: Publish to npm (Trusted Publishing / OIDC)
+      - name: Check if version already on npm
+        id: npm_version
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@axonkit/client-sdk-js@${VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${VERSION} already on npm — skipping publish"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        if: >-
+          (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run))
+          && steps.npm_version.outputs.published != 'true'
         run: npm publish --access public
 
       - name: Create GitHub Release
