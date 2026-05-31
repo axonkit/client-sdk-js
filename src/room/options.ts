@@ -120,4 +120,4 @@ export interface InternalRoomConnectOptions {
 /**
  * Options for Room.connect()
  */
-export interface RoomConnectOptions extends Partial<InternalRoomConnectOptions> {}
+export type RoomConnectOptions = Partial<InternalRoomConnectOptions>;

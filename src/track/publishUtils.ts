@@ -233,13 +233,13 @@ export function computeVideoEncodings(
           scaleResolutionDownBy: requireScale ? 2 ** i : undefined,
         });
       }
-      /* @ts-ignore */
+      /* @ts-expect-error scalabilityMode is not in RTCRtpEncodingParameters yet */
       encodings[0].scalabilityMode = scalabilityMode;
     } else {
       encodings.push({
         maxBitrate: videoEncoding.maxBitrate,
         maxFramerate: original.encoding.maxFramerate,
-        /* @ts-ignore */
+        /* @ts-expect-error scalabilityMode is not in RTCRtpEncodingParameters yet */
         scalabilityMode,
       });
     }

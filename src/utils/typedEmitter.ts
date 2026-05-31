@@ -11,9 +11,8 @@ import { EventEmitter } from 'events';
  * Runtime behaviour is 100% `EventEmitter`; this class adds zero runtime
  * code.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export class TypedEmitter<
-  T extends Record<string, (...args: any[]) => void> = {},
+  T extends Record<string, (...args: any[]) => void> = Record<string, never>,
 > extends EventEmitter {
   declare emit: <E extends string | number>(
     event: E,
