@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="AxonKit — distributed WebRTC media server and client SDK">
+  <defs>
+    <radialGradient id="axk-glow1" cx="0.28" cy="0.38" r="0.5">
+      <stop offset="0" stop-color="#4F46E5" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="axk-glow2" cx="0.85" cy="0.85" r="0.55">
+      <stop offset="0" stop-color="#06B6D4" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#06B6D4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="axk-accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="640" fill="#0B1020"/>
+  <rect width="1200" height="640" fill="url(#axk-glow1)"/>
+  <rect width="1200" height="640" fill="url(#axk-glow2)"/>
+
+  <g transform="translate(128,176) scale(3)">
+    <g stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" fill="none">
+      <path d="M48 22 L22 72"/>
+      <path d="M48 22 L74 72"/>
+      <path d="M32.4 52 L63.6 52"/>
+    </g>
+    <circle cx="48" cy="22" r="6.5" fill="#FFFFFF"/>
+    <circle cx="22" cy="72" r="5.5" fill="#FFFFFF"/>
+    <circle cx="74" cy="72" r="5.5" fill="#FFFFFF"/>
+    <circle cx="48" cy="52" r="5" fill="url(#axk-accent)"/>
+  </g>
+
+  <text x="480" y="300" fill="#FFFFFF"
+        font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="96" font-weight="800" letter-spacing="2">AxonKit</text>
+  <text x="483" y="372" fill="#A5F3FC"
+        font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="30" font-weight="500">Distributed WebRTC media server &amp; client SDK</text>
+  <text x="483" y="428" fill="#64748B"
+        font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="22">github.com/axonkit · npm: @axonkit/client-sdk-js</text>
+</svg>
