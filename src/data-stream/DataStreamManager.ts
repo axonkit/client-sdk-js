@@ -20,6 +20,41 @@ const log = getLogger('DataStream');
 export const STREAM_DATA_LABEL = '__stream';
 const CHUNK_SIZE = 15_000;
 
+// --- Flow-control limits ---
+/** Pause sending while the DataChannel buffer is above this. */
+const BUFFERED_AMOUNT_LOW_THRESHOLD = 1024 * 1024;
+/** Per-stream queued-bytes cap on the receiving side. */
+const STREAM_HIGH_WATER_MARK = 4 * 1024 * 1024;
+/** Kill a receiving stream that receives nothing for this long. */
+const STREAM_IDLE_TIMEOUT_MS = 30_000;
+/** Max concurrently open receiving streams. */
+const MAX_ACTIVE_STREAMS = 64;
+
+/**
+ * Waits until the DataProducer's send buffer drains below the low threshold.
+ * Must be awaited between chunk sends or a fast sender can exhaust SCTP
+ * memory while the network is slower than the producer.
+ */
+async function waitForDrain(dp: mediasoupTypes.DataProducer): Promise<void> {
+  if (dp.bufferedAmount <= BUFFERED_AMOUNT_LOW_THRESHOLD) return;
+  await new Promise<void>((resolve) => {
+    const onLow = () => {
+      cleanup();
+      resolve();
+    };
+    const onClose = () => {
+      cleanup();
+      resolve(); // channel closed: stop waiting, let send() fail naturally
+    };
+    const cleanup = () => {
+      dp.off('bufferedamountlow', onLow);
+      dp.off('close', onClose);
+    };
+    dp.on('bufferedamountlow', onLow);
+    dp.on('close', onClose);
+  });
+}
+
 // --- Binary frame protocol ---
 
 const FRAME_HEADER = 0x01;
@@ -150,6 +185,7 @@ export class TextStreamWriter {
     const encoder = new TextEncoder();
     const chunks = splitString(text, CHUNK_SIZE);
     for (const chunk of chunks) {
+      await waitForDrain(this.dataProducer);
       const frame = encodeFrame(FRAME_CHUNK, this.streamId, encoder.encode(chunk));
       this.dataProducer.send(frame);
     }
@@ -181,6 +217,7 @@ export class ByteStreamWriter {
     for (let offset = 0; offset < data.byteLength; offset += CHUNK_SIZE) {
       const end = Math.min(offset + CHUNK_SIZE, data.byteLength);
       const chunk = data.subarray(offset, end);
+      await waitForDrain(this.dataProducer);
       const frame = encodeFrame(FRAME_CHUNK, this.streamId, chunk);
       this.dataProducer.send(frame);
     }
@@ -201,6 +238,7 @@ export class DataStreamSender {
   private transportManager: TransportManager;
   private dataProducer?: mediasoupTypes.DataProducer;
   private dataProducerPromise?: Promise<mediasoupTypes.DataProducer>;
+  private closed = false;
 
   constructor(rpc: RPCClient, transportManager: TransportManager) {
     this.rpc = rpc;
@@ -208,6 +246,7 @@ export class DataStreamSender {
   }
 
   private async ensureDataProducer(): Promise<mediasoupTypes.DataProducer> {
+    if (this.closed) throw new Error('DataStreamSender is closed');
     if (this.dataProducer && !this.dataProducer.closed) {
       return this.dataProducer;
     }
@@ -218,10 +257,17 @@ export class DataStreamSender {
     this.dataProducerPromise = this.createDataProducer();
     try {
       this.dataProducer = await this.dataProducerPromise;
-      return this.dataProducer;
     } finally {
       this.dataProducerPromise = undefined;
     }
+    // close() may have run while creation was in flight — don't leak the
+    // freshly created producer on a dead transport.
+    if (this.closed) {
+      this.dataProducer.close();
+      this.dataProducer = undefined;
+      throw new Error('DataStreamSender is closed');
+    }
+    return this.dataProducer;
   }
 
   private async createDataProducer(): Promise<mediasoupTypes.DataProducer> {
@@ -260,6 +306,7 @@ export class DataStreamSender {
       protocol: '',
       appData: { clientTrackId },
     });
+    dp.bufferedAmountLowThreshold = BUFFERED_AMOUNT_LOW_THRESHOLD;
 
     await publishPromise;
     log.info('Stream DataProducer created');
@@ -285,6 +332,7 @@ export class DataStreamSender {
 
     const chunks = splitString(text, CHUNK_SIZE);
     for (let i = 0; i < chunks.length; i++) {
+      await waitForDrain(dp);
       dp.send(encodeFrame(FRAME_CHUNK, streamId, encoder.encode(chunks[i])));
       options?.onProgress?.((i + 1) / chunks.length);
     }
@@ -345,6 +393,7 @@ export class DataStreamSender {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, data.byteLength);
+      await waitForDrain(dp);
       dp.send(encodeFrame(FRAME_CHUNK, streamId, data.subarray(start, end)));
       options?.onProgress?.((i + 1) / totalChunks);
     }
@@ -384,6 +433,7 @@ export class DataStreamSender {
   }
 
   close(): void {
+    this.closed = true;
     this.dataProducer?.close();
     this.dataProducer = undefined;
   }
@@ -397,6 +447,7 @@ interface ActiveStream {
   controller: ReadableStreamDefaultController<any>;
   senderIdentity: string;
   senderSid: string;
+  idleTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class DataStreamReceiver {
@@ -479,14 +530,38 @@ export class DataStreamReceiver {
       return;
     }
 
-    if (isText) {
-      let controller!: ReadableStreamDefaultController<string>;
-      const stream = new ReadableStream<string>({
+    if (this.activeStreams.size >= MAX_ACTIVE_STREAMS) {
+      log.warn(`Dropping stream ${streamId}: too many active streams (>=${MAX_ACTIVE_STREAMS})`);
+      return;
+    }
+
+    let controller!: ReadableStreamDefaultController<string | Uint8Array>;
+    // The queuing strategy bounds memory: desiredSize goes negative once the
+    // consumer falls behind by more than the high-water mark, and handleChunk
+    // then fails the stream instead of buffering without limit.
+    const stream = new ReadableStream<string | Uint8Array>(
+      {
         start(c) {
           controller = c;
         },
-      });
+      },
+      { highWaterMark: STREAM_HIGH_WATER_MARK },
+    );
 
+    const idleTimer = setTimeout(() => {
+      this.failStream(streamId, new Error('Stream idle timeout'));
+    }, STREAM_IDLE_TIMEOUT_MS);
+
+    this.activeStreams.set(streamId, {
+      info: undefined as any,
+      streamType,
+      controller,
+      senderIdentity,
+      senderSid,
+      idleTimer,
+    });
+
+    if (isText) {
       const info: TextStreamInfo = {
         id: streamId,
         mimeType: header.mimeType ?? 'text/plain',
@@ -495,25 +570,10 @@ export class DataStreamReceiver {
         size: header.totalSize,
         attributes: header.attributes,
       };
-
-      this.activeStreams.set(streamId, {
-        info,
-        streamType,
-        controller,
-        senderIdentity,
-        senderSid,
-      });
-
-      const reader = new TextStreamReader(info, stream);
+      this.activeStreams.get(streamId)!.info = info;
+      const reader = new TextStreamReader(info, stream as ReadableStream<string>);
       (handler as TextStreamHandler)(reader, { identity: senderIdentity, sid: senderSid });
     } else {
-      let controller!: ReadableStreamDefaultController<Uint8Array>;
-      const stream = new ReadableStream<Uint8Array>({
-        start(c) {
-          controller = c;
-        },
-      });
-
       const info: ByteStreamInfo = {
         id: streamId,
         mimeType: header.mimeType ?? 'application/octet-stream',
@@ -523,16 +583,8 @@ export class DataStreamReceiver {
         name: header.name ?? '',
         attributes: header.attributes,
       };
-
-      this.activeStreams.set(streamId, {
-        info,
-        streamType,
-        controller,
-        senderIdentity,
-        senderSid,
-      });
-
-      const reader = new ByteStreamReader(info, stream);
+      this.activeStreams.get(streamId)!.info = info;
+      const reader = new ByteStreamReader(info, stream as ReadableStream<Uint8Array>);
       (handler as ByteStreamHandler)(reader, { identity: senderIdentity, sid: senderSid });
     }
   }
@@ -540,6 +592,19 @@ export class DataStreamReceiver {
   private handleChunk(streamId: string, payload: Uint8Array): void {
     const entry = this.activeStreams.get(streamId);
     if (!entry) return;
+
+    // Reset the idle timer: data is still flowing.
+    if (entry.idleTimer) clearTimeout(entry.idleTimer);
+    entry.idleTimer = setTimeout(() => {
+      this.failStream(streamId, new Error('Stream idle timeout'));
+    }, STREAM_IDLE_TIMEOUT_MS);
+
+    if ((entry.controller.desiredSize ?? 1) <= 0) {
+      // Consumer is behind by more than the high-water mark — a malicious or
+      // broken sender could otherwise exhaust memory.
+      this.failStream(streamId, new Error('Stream buffer overflow'));
+      return;
+    }
 
     if (entry.streamType === 'text') {
       const decoder = new TextDecoder();
@@ -553,11 +618,26 @@ export class DataStreamReceiver {
     const entry = this.activeStreams.get(streamId);
     if (!entry) return;
 
+    if (entry.idleTimer) clearTimeout(entry.idleTimer);
     try {
       entry.controller.close();
     } catch {
       // already closed
     }
+    this.activeStreams.delete(streamId);
+  }
+
+  private failStream(streamId: string, err: Error): void {
+    const entry = this.activeStreams.get(streamId);
+    if (!entry) return;
+
+    if (entry.idleTimer) clearTimeout(entry.idleTimer);
+    try {
+      entry.controller.error(err);
+    } catch {
+      // already errored/closed
+    }
+    log.warn(`Stream ${streamId} failed: ${err.message}`);
     this.activeStreams.delete(streamId);
   }
 }

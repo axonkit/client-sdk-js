@@ -9,6 +9,9 @@ import type {
 
 const log = getLogger('SignalClient');
 
+/** Hard cap on signalling HTTP requests so a stalled server cannot hang joins. */
+const SIGNAL_TIMEOUT_MS = 10_000;
+
 export interface JoinResult {
   response: JoinResponse | ReconnectResponse;
   logId: string;
@@ -44,6 +47,7 @@ export class SignalClient {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({ payload: JSON.stringify(request) }),
+      signal: AbortSignal.timeout(SIGNAL_TIMEOUT_MS),
     });
 
     if (!resp.ok) {
@@ -82,6 +86,7 @@ export class SignalClient {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({ payload: JSON.stringify(request) }),
+      signal: AbortSignal.timeout(SIGNAL_TIMEOUT_MS),
     });
 
     if (!resp.ok) {

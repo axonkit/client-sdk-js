@@ -122,6 +122,9 @@ export class LocalVideoTrack extends LocalTrack {
                 enc.maxBitrate = 10;
                 enc.maxFramerate = 2;
               }
+              // Firefox always needs setParameters when scale/bitrate are
+              // touched, even if `active` itself did not change.
+              changed = true;
             }
           }
         }

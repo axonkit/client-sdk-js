@@ -4,6 +4,9 @@ import type { LocalTrack } from '../track/LocalTrack';
 import type { TrackSource, TrackInfo } from '../protocol/types';
 import { AudioTrackFeature, TrackKind } from '../protocol/types';
 import type { TrackPublishOptions } from '../track/options';
+import { getLogger } from '../utils/logger';
+
+const log = getLogger('LocalTrackPublication');
 
 export class LocalTrackPublication extends TrackPublication {
   /** @internal */
@@ -49,13 +52,20 @@ export class LocalTrackPublication extends TrackPublication {
   /** Mute the track associated with this publication. */
   mute(): void {
     const localTrack = this.track as LocalTrack | undefined;
-    localTrack?.mute();
+    // LocalAudioTrack.mute() is async (may stop the source track) — don't
+    // leave its rejection unhandled.
+    Promise.resolve(localTrack?.mute()).catch((err) => {
+      log.warn('Failed to mute track', err);
+    });
   }
 
   /** Unmute the track associated with this publication. */
   unmute(): void {
     const localTrack = this.track as LocalTrack | undefined;
-    localTrack?.unmute();
+    // LocalAudioTrack.unmute() may restart the capture device and reject.
+    Promise.resolve(localTrack?.unmute()).catch((err) => {
+      log.warn('Failed to unmute track', err);
+    });
   }
 
   /**

@@ -30,6 +30,7 @@ import {
   type TrackUnpublishedNotification,
   type DataTrackPublishedNotification,
   type DataTrackUnpublishedNotification,
+  type DataTrackInfo,
   type TrackMutedNotification,
   type TrackSubscribedQualityChangedNotification,
   type ActiveSpeakersChangedNotification,
@@ -105,6 +106,11 @@ export type RoomEvents = {
     publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => void;
+  [RoomEvent.DataTrackPublished]: (
+    dataTrack: DataTrackInfo,
+    participant: RemoteParticipant,
+  ) => void;
+  [RoomEvent.DataTrackUnpublished]: (dataTrackSid: string, participant: RemoteParticipant) => void;
   [RoomEvent.TrackSubscribed]: (
     track: Track,
     publication: RemoteTrackPublication,
@@ -205,6 +211,8 @@ export class Room extends TypedEmitter<RoomEvents> {
 
   private reconnectAttempts = 0;
   private reconnectPolicy: ReconnectPolicy = new DefaultReconnectPolicy();
+  /** When the current reconnect cycle started, for elapsed-based retry policies. */
+  private reconnectStartedAt?: number;
   /** Monotonic token bumped whenever the session is torn down (timeout, disconnect, cleanup).
    *  In-flight connect/reconnect flows capture it at start and abort when it goes stale. */
   private connectGeneration = 0;
@@ -219,6 +227,8 @@ export class Room extends TypedEmitter<RoomEvents> {
   private dataStreamReceiver = new DataStreamReceiver();
   private _lastMessageTimestamp = 0;
   private _connectOptions: RoomConnectOptions = {};
+  /** RPC handlers registered before the local participant exists. */
+  private pendingRpcHandlers = new Map<string, (data: RpcInvocationData) => Promise<string>>();
 
   constructor(options?: RoomOptions) {
     super();
@@ -515,6 +525,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.startHeartbeat(connectResult.pingInterval, connectResult.pingTimeout);
       this.startStatsCollector(connectResult.statsInterval);
       this.reconnectAttempts = 0;
+      this.reconnectStartedAt = undefined;
       this.reconnectPolicy.reset?.();
 
       this.setupDeviceChangeListener();
@@ -629,7 +640,9 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     log.info('Disconnecting from room');
 
-    await this.rpcClient?.request('leave', { reason: 'client_initiated' }).catch(() => {});
+    // Best-effort leave notification: the request is written to the data
+    // channel synchronously, so no need to block teardown on the response.
+    this.rpcClient?.request('leave', { reason: 'client_initiated' }, 1_000).catch(() => {});
 
     this.cleanup(DisconnectReason.ClientInitiated, stopTracks);
   }
@@ -649,10 +662,11 @@ export class Room extends TypedEmitter<RoomEvents> {
     try {
       while (true) {
         this.reconnectAttempts++;
+        this.reconnectStartedAt ??= Date.now();
 
         const delay = this.reconnectPolicy.nextRetryDelayInMs({
           retryCount: this.reconnectAttempts,
-          elapsedMs: 0,
+          elapsedMs: Date.now() - this.reconnectStartedAt,
         });
         if (delay === null) {
           log.warn('Reconnect policy says stop');
@@ -716,6 +730,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       if (gen !== this.connectGeneration) return;
       this.setState(ConnectionState.Connected);
       this.reconnectAttempts = 0;
+      this.reconnectStartedAt = undefined;
       this.reconnectPolicy.reset?.();
       this.emit(RoomEvent.Reconnected);
       log.info('ICE restart completed');
@@ -803,6 +818,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     this.setState(ConnectionState.Connected);
     this.reconnectAttempts = 0;
+    this.reconnectStartedAt = undefined;
     this.reconnectPolicy.reset?.();
     this.emit(RoomEvent.Reconnected);
     log.info('Reconnected successfully');
@@ -1012,6 +1028,11 @@ export class Room extends TypedEmitter<RoomEvents> {
    *   a string payload.
    */
   registerRpcMethod(method: string, handler: (data: RpcInvocationData) => Promise<string>): void {
+    if (!this._localParticipant) {
+      // Called before connect() — queue and flush once the participant exists.
+      this.pendingRpcHandlers.set(method, handler);
+      return;
+    }
     this._localParticipant.rpcHandlers.set(method, handler);
   }
 
@@ -1019,7 +1040,8 @@ export class Room extends TypedEmitter<RoomEvents> {
    * Remove a previously registered RPC method handler.
    */
   unregisterRpcMethod(method: string): void {
-    this._localParticipant.rpcHandlers.delete(method);
+    this.pendingRpcHandlers.delete(method);
+    this._localParticipant?.rpcHandlers.delete(method);
   }
 
   // --- Data Stream Handlers ---
@@ -1077,6 +1099,13 @@ export class Room extends TypedEmitter<RoomEvents> {
     }
     this._localParticipant.roomOptions = this._options;
     this._localParticipant.init(this.rpcClient, this.transportManager);
+    // Flush RPC handlers registered before connect().
+    if (this.pendingRpcHandlers.size > 0) {
+      for (const [method, handler] of this.pendingRpcHandlers) {
+        this._localParticipant.rpcHandlers.set(method, handler);
+      }
+      this.pendingRpcHandlers.clear();
+    }
     this.dataStreamReceiver.setLocalIdentity(jr.participant.identity);
   }
 
@@ -1605,6 +1634,9 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private wireRemoteParticipantEvents(rp: RemoteParticipant): void {
+    // Room wires ~12 forwarding listeners per participant; disable Node's
+    // default 10-listener warning instead of hitting it in every room.
+    rp.setMaxListeners(0);
     rp.on(ParticipantEvent.TrackSubscribed, (track, pub) => {
       this.emit(RoomEvent.TrackSubscribed, track, pub, rp);
     });
@@ -1699,6 +1731,8 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._remoteParticipants.clear();
     this._groups.clear();
     this._sharedState.clear();
+    this.reconnectAttempts = 0;
+    this.reconnectStartedAt = undefined;
 
     if (this.pageLeaveHandler && isWeb()) {
       window.removeEventListener('beforeunload', this.pageLeaveHandler);

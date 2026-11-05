@@ -52,9 +52,21 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
     this.kind = kind;
     this.source = source;
     this._mediaStreamTrack = mediaStreamTrack;
-    mediaStreamTrack.addEventListener('ended', () => {
-      this.emit(TrackEvent.Ended, this);
-    });
+    mediaStreamTrack.addEventListener('ended', this.onEndedListener);
+  }
+
+  protected onEndedListener = (): void => {
+    this.onEnded();
+  };
+
+  /** Hook fired when the underlying MediaStreamTrack ends. */
+  protected onEnded(): void {
+    this.emit(TrackEvent.Ended, this);
+  }
+
+  /** Detach the base-class 'ended' listener from the given track. */
+  protected detachEndedListener(track: MediaStreamTrack): void {
+    track.removeEventListener('ended', this.onEndedListener);
   }
 
   /** Current bitrate in bits per second, updated by the monitor. */
@@ -138,15 +150,6 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
       .catch((e: Error) => {
         if (e.name === 'NotAllowedError') {
           this.emit(hasAudio ? TrackEvent.AudioPlaybackFailed : TrackEvent.VideoPlaybackFailed, e);
-        }
-        if (
-          hasAudio &&
-          element &&
-          stream.getVideoTracks().length > 0 &&
-          e.name === 'NotAllowedError'
-        ) {
-          element.muted = true;
-          element.play().catch(() => {});
         }
       });
 

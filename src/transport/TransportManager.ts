@@ -60,6 +60,9 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
   private pendingProduceCallbacks = new Map<string, ProduceCallback>();
   private pendingProduceDataCallbacks = new Map<string, ProduceDataCallback>();
   private disconnectedGraceTimers = new Map<'send' | 'recv', ReturnType<typeof setTimeout>>();
+  /** Transport connect entries awaiting submission, keyed by transport SID. */
+  private pendingConnects = new Map<string, TransportConnectInfo>();
+  private connectFlushPromise?: Promise<void>;
 
   constructor(signalClient: SignalClient) {
     super();
@@ -236,8 +239,6 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
   }
 
   private setupTransportEvents(): void {
-    const pendingConnects: TransportConnectInfo[] = [];
-
     // --- Send transport events ---
     this.sendTransport!.on('connect', ({ dtlsParameters }, callback, errback) => {
       if (this.hasDtlsFingerprints) {
@@ -245,11 +246,10 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
         callback();
         return;
       }
-      pendingConnects.push({
+      this.enqueueConnect({
         transportSid: this.sendTransport!.id,
         dtlsParameters: dtlsParameters as any,
-      });
-      this.connectTransports(pendingConnects)
+      })
         .then(() => callback())
         .catch(errback);
     });
@@ -298,11 +298,10 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
         callback();
         return;
       }
-      pendingConnects.push({
+      this.enqueueConnect({
         transportSid: this.recvTransport!.id,
         dtlsParameters: dtlsParameters as any,
-      });
-      this.connectTransports(pendingConnects)
+      })
         .then(() => callback())
         .catch(errback);
     });
@@ -349,6 +348,29 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
     }
   }
 
+  /**
+   * Queues a transport-connect entry keyed by transport SID and flushes the
+   * queue. Deduplicating by SID plus draining in a loop guarantees each
+   * transport is submitted to the server exactly once even when send and recv
+   * 'connect' events fire concurrently.
+   */
+  private enqueueConnect(info: TransportConnectInfo): Promise<void> {
+    this.pendingConnects.set(info.transportSid, info);
+    if (this.connectFlushPromise) return this.connectFlushPromise;
+
+    const run = async (): Promise<void> => {
+      while (this.pendingConnects.size > 0) {
+        const transports = [...this.pendingConnects.values()];
+        this.pendingConnects.clear();
+        await this.connectTransports(transports);
+      }
+    };
+    this.connectFlushPromise = run().finally(() => {
+      this.connectFlushPromise = undefined;
+    });
+    return this.connectFlushPromise;
+  }
+
   private async connectTransports(transports: TransportConnectInfo[]): Promise<void> {
     if (!this.joinResponse) return;
 
@@ -359,7 +381,6 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
     };
 
     await this.signalClient.connect(this.url, request, this.joinResponse.room?.name);
-    transports.length = 0;
   }
 
   private async setupSignalChannels(jr: JoinResponse): Promise<void> {

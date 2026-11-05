@@ -45,6 +45,7 @@ export class StatsCollector {
   private localParticipant: LocalParticipant;
   private remoteParticipants: Map<string, RemoteParticipant>;
   private timer?: ReturnType<typeof setInterval>;
+  private collecting = false;
 
   constructor(
     rpc: RPCClient,
@@ -64,9 +65,18 @@ export class StatsCollector {
 
     log.info('Stats collector started');
     this.timer = setInterval(() => {
-      this.collect().catch((err) => {
-        log.warn('Failed to collect stats', err);
-      });
+      // Skip when the previous round is still running: getStats() on a slow
+      // network can take longer than the interval, and overlapping reports
+      // would interleave stale and fresh samples.
+      if (this.collecting) return;
+      this.collecting = true;
+      this.collect()
+        .catch((err) => {
+          log.warn('Failed to collect stats', err);
+        })
+        .finally(() => {
+          this.collecting = false;
+        });
     }, intervalSec * 1000);
   }
 

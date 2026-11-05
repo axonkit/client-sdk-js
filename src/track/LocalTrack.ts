@@ -27,6 +27,11 @@ export class LocalTrack extends Track {
   private _prevStatsTime = 0;
   private _mediaTrackMuteDebounce: ReturnType<typeof setTimeout> | undefined;
   private _handleVisibilityChange = this.onVisibilityChange.bind(this);
+  /** Count of upcoming 'ended' events caused by intentional SDK stops. */
+  private _suppressedEndedCount = 0;
+  /** Timestamp (ms) of the last failed restart, used to break restart loops. */
+  /** @internal */
+  lastRestartFailedAt = 0;
 
   protected trackChangeLock = new Mutex();
   protected pauseUpstreamLock = new Mutex();
@@ -113,6 +118,26 @@ export class LocalTrack extends Track {
   }
 
   /**
+   * Suppresses the {@link TrackEvent.Ended} emission for tracks the SDK stops
+   * on purpose (device switch, stopOnMute, Safari restart, stop()) so that
+   * consumers can treat Ended as an actual device/source failure.
+   */
+  protected stopMediaTrackQuietly(track: MediaStreamTrack | undefined): void {
+    if (!track) return;
+    this._suppressedEndedCount++;
+    track.stop();
+  }
+
+  protected override onEnded(): void {
+    if (this._suppressedEndedCount > 0) {
+      this._suppressedEndedCount--;
+      log.debug(`Suppressing intentional ended event for ${this.sid ?? 'unknown'}`);
+      return;
+    }
+    this.emit(TrackEvent.Ended, this);
+  }
+
+  /**
    * Set a {@link TrackProcessor} on this track. Pass `undefined` to remove
    * the current processor.
    */
@@ -129,7 +154,7 @@ export class LocalTrack extends Track {
 
       if (!processor) {
         this.destroyProcessorElement();
-        if (this._producer) {
+        if (this._producer && !this._isUpstreamPaused) {
           await this._producer.replaceTrack({ track: this._mediaStreamTrack });
         }
         this.reattachElementsToTrack(this._mediaStreamTrack);
@@ -151,7 +176,10 @@ export class LocalTrack extends Track {
       if (showProcessedStreamLocally) {
         this.reattachElementsToTrack(outputTrack);
       }
-      if (this._producer) {
+      // When upstream is paused the producer sends nothing; replacing the
+      // track would silently resume sending. resumeUpstream() picks up the
+      // processed track on its own.
+      if (this._producer && !this._isUpstreamPaused) {
         await this._producer.replaceTrack({ track: outputTrack });
       }
     } finally {
@@ -170,7 +198,7 @@ export class LocalTrack extends Track {
       this._processor = undefined;
       this.destroyProcessorElement();
 
-      if (this._producer) {
+      if (this._producer && !this._isUpstreamPaused) {
         await this._producer.replaceTrack({ track: this._mediaStreamTrack });
       }
       this.reattachElementsToTrack(this._mediaStreamTrack);
@@ -220,8 +248,7 @@ export class LocalTrack extends Track {
         return;
       }
       this._isUpstreamPaused = false;
-      const trackToSend = this._processor?.processedTrack ?? this.mediaStreamTrack;
-      await this._producer.replaceTrack({ track: trackToSend });
+      await this._producer.replaceTrack({ track: this.mediaStreamTrack });
       this.emit(TrackEvent.UpstreamResumed, this);
     } finally {
       release();
@@ -288,18 +315,30 @@ export class LocalTrack extends Track {
       // Safari requires stopping the old audio track before acquiring a new
       // one, otherwise it may throw "MediaStreamTrack ended due to capture failure".
       if (kind === 'audio' && isSafariBased()) {
-        this._mediaStreamTrack?.stop();
+        this.stopMediaTrackQuietly(this._mediaStreamTrack);
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        [kind]: this._constraints ?? true,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          [kind]: this._constraints ?? true,
+        });
+      } catch (err) {
+        // Record the failure so auto-restart loops (producer trackended)
+        // back off instead of hammering getUserMedia.
+        this.lastRestartFailedAt = Date.now();
+        throw err;
+      }
 
       const newTrack = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
 
-      if (!newTrack) throw new Error('Failed to get new media track');
+      if (!newTrack) {
+        this.lastRestartFailedAt = Date.now();
+        throw new Error('Failed to get new media track');
+      }
 
       await this.replaceTrackInternal(newTrack);
+      this.lastRestartFailedAt = 0;
       log.info(`Track ${this.sid ?? 'unknown'} restarted`);
       (this as any).emit(TrackEvent.Restarted, this);
     } finally {
@@ -319,9 +358,11 @@ export class LocalTrack extends Track {
   /** Internal replace without acquiring trackChangeLock (caller must hold it). */
   private async replaceTrackInternal(newTrack: MediaStreamTrack): Promise<void> {
     this.detachMediaTrackListeners(this._mediaStreamTrack);
+    this.detachEndedListener(this._mediaStreamTrack);
     const oldTrack = this._mediaStreamTrack;
     this._mediaStreamTrack = newTrack;
     this.attachMediaTrackListeners(newTrack);
+    newTrack.addEventListener('ended', this.onEndedListener);
 
     // Reattach source track to the processorElement so the processor
     // can read from the new source.
@@ -341,7 +382,9 @@ export class LocalTrack extends Track {
       }
     }
 
-    if (this._producer) {
+    // Skip the producer swap while upstream is paused: replaceTrack would
+    // silently resume sending. resumeUpstream() sends the new track anyway.
+    if (this._producer && !this._isUpstreamPaused) {
       await this._producer.replaceTrack({ track: trackForProducer });
     }
 
@@ -349,12 +392,13 @@ export class LocalTrack extends Track {
     this.reattachElementsToTrack(displayTrack);
 
     if (!this._providedByUser) {
-      oldTrack?.stop();
+      this.stopMediaTrackQuietly(oldTrack);
     }
   }
 
   stop(): void {
     this.detachMediaTrackListeners(this._mediaStreamTrack);
+    this.detachEndedListener(this._mediaStreamTrack);
     this.removeVisibilityListener();
     if (this._mediaTrackMuteDebounce) {
       clearTimeout(this._mediaTrackMuteDebounce);
@@ -365,7 +409,8 @@ export class LocalTrack extends Track {
       this._processor = undefined;
     }
     this.destroyProcessorElement();
-    this._mediaStreamTrack?.stop();
+    // Intentional stop — do not surface an Ended event for it.
+    this.stopMediaTrackQuietly(this._mediaStreamTrack);
     super.stop();
     log.debug(`Track ${this.sid ?? 'unknown'} stopped`);
   }
@@ -458,7 +503,15 @@ export class LocalTrack extends Track {
     if (document.visibilityState !== 'visible') return;
     // When returning to foreground on mobile, the track may have been
     // released by the OS. Try to restart it if the track has ended.
-    if (this._mediaStreamTrack.readyState === 'ended' && !this._providedByUser) {
+    // Screen share tracks are skipped: restart() would fall back to a plain
+    // getUserMedia({video: true}) camera prompt since share constraints are
+    // not retained.
+    if (
+      this._mediaStreamTrack.readyState === 'ended' &&
+      !this._providedByUser &&
+      this.source !== TrackSource.ScreenShare &&
+      this.source !== TrackSource.ScreenShareAudio
+    ) {
       log.info(`Track ${this.sid ?? 'unknown'} ended while in background, restarting`);
       try {
         await this.restart();

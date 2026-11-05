@@ -17,7 +17,7 @@ const log = getLogger('create');
 
 function audioConstraints(opts: AudioCaptureOptions | true): MediaTrackConstraints {
   if (opts === true) opts = defaultAudioCaptureOptions;
-  return {
+  const constraints: MediaTrackConstraints = {
     echoCancellation: opts.echoCancellation,
     noiseSuppression: opts.noiseSuppression,
     autoGainControl: opts.autoGainControl,
@@ -26,6 +26,12 @@ function audioConstraints(opts: AudioCaptureOptions | true): MediaTrackConstrain
     sampleRate: opts.sampleRate,
     sampleSize: opts.sampleSize,
   };
+  // latency/voiceIsolation are valid constraints but missing from TS's
+  // MediaTrackConstraints typing.
+  const extra = constraints as Record<string, unknown>;
+  if (opts.latency !== undefined) extra.latency = opts.latency;
+  if (opts.voiceIsolation !== undefined) extra.voiceIsolation = opts.voiceIsolation;
+  return constraints;
 }
 
 function videoConstraints(opts: VideoCaptureOptions | true): MediaTrackConstraints {
@@ -79,6 +85,9 @@ export async function createLocalAudioTrack(
   const constraints = audioConstraints(options ?? defaultAudioCaptureOptions);
   const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
   const track = stream.getAudioTracks()[0];
+  if (!track) {
+    throw new Error('getUserMedia returned no audio track');
+  }
   return new LocalAudioTrack(track, constraints);
 }
 
@@ -93,6 +102,9 @@ export async function createLocalVideoTrack(
   const constraints = videoConstraints(options ?? defaultVideoCaptureOptions);
   const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
   const track = stream.getVideoTracks()[0];
+  if (!track) {
+    throw new Error('getUserMedia returned no video track');
+  }
   return new LocalVideoTrack(track, TrackSource.Camera, constraints);
 }
 

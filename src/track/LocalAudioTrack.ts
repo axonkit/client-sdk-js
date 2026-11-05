@@ -31,7 +31,9 @@ export class LocalAudioTrack extends LocalTrack {
     try {
       if (this.isMuted) return;
       if (this.stopOnMute && !this.isUserProvided) {
-        this._mediaStreamTrack.stop();
+        // Intentional stop — the resulting 'ended' event must not surface
+        // as TrackEvent.Ended.
+        this.stopMediaTrackQuietly(this._mediaStreamTrack);
       }
       super.mute();
     } finally {

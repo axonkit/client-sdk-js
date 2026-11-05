@@ -62,15 +62,13 @@ export class ConnectionCheck extends TypedEmitter<ConnectionCheckEvents> {
 
   async checkPublishAudio(): Promise<CheckInfo> {
     return this.runCheck('publish-audio', 'Check audio publishing capability', async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      for (const t of stream.getTracks()) t.stop();
+      await this.acquireAndReleaseTracks({ audio: true }, 'audio');
     });
   }
 
   async checkPublishVideo(): Promise<CheckInfo> {
     return this.runCheck('publish-video', 'Check video publishing capability', async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      for (const t of stream.getTracks()) t.stop();
+      await this.acquireAndReleaseTracks({ video: true }, 'video');
     });
   }
 
@@ -81,6 +79,42 @@ export class ConnectionCheck extends TypedEmitter<ConnectionCheckEvents> {
     results.push(await this.checkPublishAudio());
     results.push(await this.checkPublishVideo());
     return results;
+  }
+
+  /**
+   * Acquires devices with a timeout. A permission prompt that is never
+   * answered would otherwise hang the check forever; if the acquisition
+   * resolves after the timeout, the tracks are still released.
+   */
+  private async acquireAndReleaseTracks(
+    constraints: MediaStreamConstraints,
+    label: string,
+  ): Promise<void> {
+    const streamPromise = navigator.mediaDevices.getUserMedia(constraints);
+    let timedOut = false;
+    // Release the mic/camera even when we stop waiting for the promise.
+    streamPromise
+      .then((s) => {
+        if (timedOut) s.getTracks().forEach((t) => t.stop());
+      })
+      .catch(() => {});
+    try {
+      const stream = await this.withTimeout(streamPromise, 15_000, `getUserMedia(${label})`);
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (err) {
+      timedOut = true;
+      throw err;
+    }
+  }
+
+  private withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]).finally(() => clearTimeout(timer!));
   }
 
   private async runCheck(

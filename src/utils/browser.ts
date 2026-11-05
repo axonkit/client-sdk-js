@@ -146,8 +146,17 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** Detect the current browser name, version, and OS. */
+/** Detect the current browser name, version, and OS. Result is cached. */
+let cachedBrowser: BrowserDetails | undefined;
+
 export function getBrowser(): BrowserDetails {
+  if (cachedBrowser) return cachedBrowser;
+  const details = detectBrowser();
+  cachedBrowser = details;
+  return details;
+}
+
+function detectBrowser(): BrowserDetails {
   if (typeof navigator === 'undefined') {
     return {
       name: 'unknown',
@@ -163,8 +172,10 @@ export function getBrowser(): BrowserDetails {
   let os: string | undefined;
   let osVersion: string | undefined;
 
-  // Detect OS
-  if (/iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && 'ontouchend' in document)) {
+  // Detect OS (guard document for worker contexts)
+  const hasTouchScreen =
+    typeof document !== 'undefined' && ua.includes('Macintosh') && 'ontouchend' in document;
+  if (/iPad|iPhone|iPod/.test(ua) || hasTouchScreen) {
     os = 'iOS';
     const match = ua.match(/OS (\d+[_.\d]*)/);
     if (match) osVersion = match[1].replace(/_/g, '.');

@@ -14,9 +14,9 @@ import { EventEmitter } from 'events';
 export class TypedEmitter<
   T extends Record<string, (...args: any[]) => void> = Record<string, never>,
 > extends EventEmitter {
-  declare emit: <E extends string | number>(
+  declare emit: <E extends keyof T & (string | number)>(
     event: E,
-    ...args: E extends keyof T ? Parameters<T[E]> : any[]
+    ...args: Parameters<T[E]>
   ) => boolean;
 
   declare on: <E extends string | number>(

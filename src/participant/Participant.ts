@@ -166,7 +166,7 @@ export abstract class Participant<
 
   private _connectionQuality: ConnectionQuality = ConnectionQuality.Unknown;
   private _kind: ParticipantKind = ParticipantKind.Standard;
-  private _activeResolvers: Array<() => void> = [];
+  private _activeResolvers: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
 
   private emitParticipantEvent<E extends keyof ParticipantEvents<TPublication>>(
     event: E,
@@ -203,12 +203,13 @@ export abstract class Participant<
 
   /**
    * Returns a promise that resolves once the participant is active
-   * and ready to receive data messages.
+   * and ready to receive data messages. Rejects if the participant
+   * transitions away from the active state first.
    */
   waitUntilActive(): Promise<void> {
     if (this.isActive) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      this._activeResolvers.push(resolve);
+    return new Promise<void>((resolve, reject) => {
+      this._activeResolvers.push({ resolve, reject });
     });
   }
 
@@ -326,8 +327,15 @@ export abstract class Participant<
     }
 
     if (!wasActive && this.isActive) {
-      for (const resolve of this._activeResolvers) {
+      for (const { resolve } of this._activeResolvers) {
         resolve();
+      }
+      this._activeResolvers = [];
+    } else if (wasActive && !this.isActive) {
+      // Participant went inactive (left / disconnected) — unblock waiters
+      // instead of leaving their promises pending forever.
+      for (const { reject } of this._activeResolvers) {
+        reject(new Error(`Participant ${this.identity} is no longer active`));
       }
       this._activeResolvers = [];
     }

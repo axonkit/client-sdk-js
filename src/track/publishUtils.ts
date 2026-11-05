@@ -125,7 +125,9 @@ function integerScaleResolutionDownBy(sourceMin: number, preset: VideoPreset): n
 
 function sortPresets(presets: VideoPreset[] | undefined): VideoPreset[] | undefined {
   if (!presets) return undefined;
-  return presets.sort((a, b) => {
+  // Copy before sorting — presets often come from user-supplied options and
+  // must not be reordered in place.
+  return [...presets].sort((a, b) => {
     const { encoding: aEnc } = a;
     const { encoding: bEnc } = b;
     if (aEnc.maxBitrate > bEnc.maxBitrate) return 1;

@@ -63,6 +63,9 @@ import { RpcError, byteLength, MAX_RPC_PAYLOAD_BYTES } from '../rpc';
 
 const log = getLogger('LocalParticipant');
 
+/** After a failed track restart, skip auto-restart for this long. */
+const RESTART_BACKOFF_MS = 30_000;
+
 export class LocalParticipant extends Participant<LocalTrackPublication> {
   private rpc!: RPCClient;
   private transportManager!: TransportManager;
@@ -528,7 +531,11 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
         !localTrack.isUserProvided &&
         (localTrack.source === TrackSource.Camera || localTrack.source === TrackSource.Microphone);
 
-      if (isManaged) {
+      // Back off after a recent restart failure: producer 'trackended' can
+      // re-fire for the dead source and would otherwise restart in a loop.
+      const recentlyFailed = Date.now() - localTrack.lastRestartFailedAt < RESTART_BACKOFF_MS;
+
+      if (isManaged && !recentlyFailed) {
         log.info(`Track ${trackSid} ended, attempting restart`);
         localTrack
           .restart()
@@ -542,7 +549,9 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
             });
           });
       } else {
-        log.info(`Track ${trackSid} ended, unpublishing`);
+        log.info(
+          `Track ${trackSid} ended${recentlyFailed ? ' (restart backed off after failure)' : ''}, unpublishing`,
+        );
         this.unpublishTrack(localTrack).catch((err) => {
           log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
         });
@@ -656,7 +665,9 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
    * callback registered on the TransportManager — without it the produceData
    * promise would always be rejected by the transport errback.
    */
-  private async ensureDataProducer(options?: DataPublishOptions): Promise<mediasoupTypes.DataProducer> {
+  private async ensureDataProducer(
+    options?: DataPublishOptions,
+  ): Promise<mediasoupTypes.DataProducer> {
     const key = LocalParticipant.dataProducerOptionsKey(options);
     const cached = this.dataProducerCache.get(key);
     if (cached && !cached.closed) {
