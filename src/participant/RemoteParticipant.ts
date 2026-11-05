@@ -236,7 +236,7 @@ export class RemoteParticipant extends Participant<RemoteTrackPublication> {
     } else {
       dataConsumer.on('message', (data: ArrayBuffer) => {
         log.debug(`Data message from ${this.sid} subscription ${req.dataSubscriptionSid}`);
-        this.emit(ParticipantEvent.DataReceived, data);
+        this.emit(ParticipantEvent.DataReceived, new Uint8Array(data));
       });
     }
 

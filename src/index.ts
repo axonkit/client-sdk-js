@@ -83,7 +83,7 @@ export {
 
 // Protocol types
 export {
-  RoomState,
+  ConnectionState,
   TrackKind,
   TrackSource,
   VideoQuality,

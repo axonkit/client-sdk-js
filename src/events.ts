@@ -32,7 +32,7 @@ export enum RoomEvent {
   /**
    * Whenever the connection state of the room changes.
    *
-   * args: `(state: RoomState)`
+   * args: `(state: {@link ConnectionState})`
    */
   ConnectionStateChanged = 'connectionStateChanged',
 
@@ -198,17 +198,21 @@ export enum RoomEvent {
    * Active speakers changed. List of speakers ordered by audio level.
    * Includes the local participant.
    *
-   * args: `(speakers: {@link ActiveSpeaker}[])`
+   * args: `(speakers: {@link Participant}[])`
    */
   ActiveSpeakersChanged = 'activeSpeakersChanged',
 
-  /** Room-level metadata has been updated by the server. */
+  /**
+   * Room-level metadata has been updated by the server.
+   *
+   * args: `(metadata: string | undefined)`
+   */
   RoomMetadataChanged = 'roomMetadataChanged',
 
   /**
    * Data received from a remote participant via a DataChannel.
    *
-   * args: `(data: ArrayBuffer, participant?: {@link RemoteParticipant})`
+   * args: `(payload: Uint8Array, participant?: {@link RemoteParticipant})`
    */
   DataReceived = 'dataReceived',
 

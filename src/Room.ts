@@ -10,7 +10,7 @@ import { LocalTrackPublication } from './participant/LocalTrackPublication';
 import type { RemoteTrackPublication } from './participant/RemoteTrackPublication';
 import { VERSION, PROTOCOL_VERSION } from './version';
 import {
-  RoomState,
+  ConnectionState,
   DisconnectReason,
   ParticipantState,
   StreamState,
@@ -78,7 +78,7 @@ export type RoomEvents = {
   [RoomEvent.Disconnected]: (reason?: DisconnectReason) => void;
   [RoomEvent.Reconnecting]: () => void;
   [RoomEvent.Reconnected]: () => void;
-  [RoomEvent.ConnectionStateChanged]: (state: RoomState) => void;
+  [RoomEvent.ConnectionStateChanged]: (state: ConnectionState) => void;
   [RoomEvent.SignalReconnecting]: () => void;
   [RoomEvent.MediaDevicesChanged]: () => void;
   [RoomEvent.MediaDevicesError]: (error: Error) => void;
@@ -134,8 +134,8 @@ export type RoomEvents = {
   ) => void;
   [RoomEvent.LocalAudioSilenceDetected]: () => void;
   [RoomEvent.ActiveSpeakersChanged]: (speakers: Participant[]) => void;
-  [RoomEvent.RoomMetadataChanged]: (room: RoomInfo) => void;
-  [RoomEvent.DataReceived]: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
+  [RoomEvent.RoomMetadataChanged]: (metadata: string | undefined) => void;
+  [RoomEvent.DataReceived]: (payload: Uint8Array, participant?: RemoteParticipant) => void;
   [RoomEvent.ConnectionQualityChanged]: (
     quality: ConnectionQuality,
     participant: Participant,
@@ -176,7 +176,7 @@ export type RoomEvents = {
 };
 
 export class Room extends TypedEmitter<RoomEvents> {
-  private _state: RoomState = RoomState.Disconnected;
+  private _state: ConnectionState = ConnectionState.Disconnected;
   private _name = '';
   private _sid = '';
   private _serverInfo?: ServerInfo;
@@ -236,7 +236,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.signalClient = new SignalClient();
   }
 
-  get state(): RoomState {
+  get state(): ConnectionState {
     return this._state;
   }
 
@@ -485,21 +485,21 @@ export class Room extends TypedEmitter<RoomEvents> {
   // --- Connect ---
 
   async connect(url: string, token?: string, options?: RoomConnectOptions): Promise<void> {
-    if (this._state !== RoomState.Disconnected) {
+    if (this._state !== ConnectionState.Disconnected) {
       throw new Error(`Cannot connect: room state is ${this._state}`);
     }
 
     this.url = url;
     this.token = token ?? '';
     this._connectOptions = options ?? {};
-    this.setState(RoomState.Connecting);
+    this.setState(ConnectionState.Connecting);
 
     const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
 
     try {
       const connectResult = await this.withTimeout(this.performConnect(url), timeoutMs);
 
-      this.setState(RoomState.Connected);
+      this.setState(ConnectionState.Connected);
       this.scheduleReadySnapshotReplay(connectResult.readyParticipants);
       this.startHeartbeat(connectResult.pingInterval, connectResult.pingTimeout);
       this.startStatsCollector(connectResult.statsInterval);
@@ -514,7 +514,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
       this.setupPageLeaveHandler();
     } catch (err) {
-      this.setState(RoomState.Disconnected);
+      this.setState(ConnectionState.Disconnected);
       this.transportManager?.close();
       throw err;
     }
@@ -600,7 +600,7 @@ export class Room extends TypedEmitter<RoomEvents> {
    *   Defaults to `true`.
    */
   async disconnect(stopTracks = true): Promise<void> {
-    if (this._state === RoomState.Disconnected) return;
+    if (this._state === ConnectionState.Disconnected) return;
 
     log.info('Disconnecting from room');
 
@@ -612,7 +612,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   // --- Reconnect ---
 
   private async attemptReconnect(): Promise<void> {
-    this.setState(RoomState.Reconnecting);
+    this.setState(ConnectionState.Reconnecting);
     this.emit(RoomEvent.Reconnecting);
     this.reconnectAttempts++;
 
@@ -629,7 +629,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     await new Promise((r) => setTimeout(r, delay));
 
-    if (this._state !== RoomState.Reconnecting) return;
+    if (this._state !== ConnectionState.Reconnecting) return;
 
     const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
 
@@ -668,7 +668,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     if (isReconnectResponse(resp)) {
       await this.transportManager.restartIce(resp.iceParameters);
-      this.setState(RoomState.Connected);
+      this.setState(ConnectionState.Connected);
       this.reconnectAttempts = 0;
       this.reconnectPolicy.reset?.();
       this.emit(RoomEvent.Reconnected);
@@ -740,7 +740,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
     this.startStatsCollector(jr.statsInterval);
 
-    this.setState(RoomState.Connected);
+    this.setState(ConnectionState.Connected);
     this.reconnectAttempts = 0;
     this.reconnectPolicy.reset?.();
     this.emit(RoomEvent.Reconnected);
@@ -789,7 +789,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
   // --- State management ---
 
-  private setState(state: RoomState): void {
+  private setState(state: ConnectionState): void {
     if (this._state === state) return;
     this._state = state;
     this.emit(RoomEvent.ConnectionStateChanged, state);
@@ -819,7 +819,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private sendPing(): void {
-    if (this._state !== RoomState.Connected) return;
+    if (this._state !== ConnectionState.Connected) return;
 
     const idleThreshold = this.pingIntervalSec * 1000;
     if (this.rpcClient.lastSentAt > 0 && Date.now() - this.rpcClient.lastSentAt < idleThreshold) {
@@ -1285,7 +1285,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     // Replay initial snapshot events after connect so apps can use the same
     // event-based path for pre-existing participants and publications.
     setTimeout(() => {
-      if (this._state !== RoomState.Connected) return;
+      if (this._state !== ConnectionState.Connected) return;
 
       for (const { participant, publications } of replayParticipants) {
         if (this._remoteParticipants.get(participant.sid) !== participant) continue;
@@ -1452,7 +1452,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     const wasRecording = this.isRecording;
     this._roomInfo = body.room;
     this._name = body.room.name;
-    this.emit(RoomEvent.RoomMetadataChanged, body.room);
+    this.emit(RoomEvent.RoomMetadataChanged, body.room.metadata);
     if (wasRecording !== this.isRecording) {
       this.emit(RoomEvent.RecordingStatusChanged, this.isRecording);
     }
@@ -1468,7 +1468,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       reason === DisconnectReason.RoomDeleted ||
       reason === DisconnectReason.ServerShutdown;
 
-    if (this._state === RoomState.Reconnecting) {
+    if (this._state === ConnectionState.Reconnecting) {
       if (isHardFailure) {
         this.cleanup(reason);
       }
@@ -1600,8 +1600,8 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private cleanup(reason: DisconnectReason, stopTracks = true): void {
-    if (this._state === RoomState.Disconnected) return;
-    this.setState(RoomState.Disconnected);
+    if (this._state === ConnectionState.Disconnected) return;
+    this.setState(ConnectionState.Disconnected);
 
     this.stopHeartbeat();
     this.stopStatsCollector();

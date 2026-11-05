@@ -140,7 +140,7 @@ export type ParticipantEvents<TPublication extends TrackPublication = TrackPubli
     publication: TPublication,
     streamState: StreamState,
   ) => void;
-  [ParticipantEvent.DataReceived]: (data: ArrayBuffer) => void;
+  [ParticipantEvent.DataReceived]: (payload: Uint8Array) => void;
   [ParticipantEvent.ChatMessage]: (message: Message) => void;
 };
 

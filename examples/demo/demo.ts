@@ -9,7 +9,7 @@ import type {
 import {
   BackupCodecPolicy,
   ConnectionQuality,
-  RoomState,
+  ConnectionState,
   DisconnectReason,
   LogLevel,
   MediaDeviceFailure,
@@ -623,7 +623,7 @@ function resolveParticipantInRoom(room: Room, identity: string): Participant | u
 function handleParticipantMediaClick(this: HTMLElement, ev: Event) {
   if (!(ev.target instanceof HTMLVideoElement)) return;
   const room = currentRoom;
-  if (!room || room.state !== RoomState.Connected) return;
+  if (!room || room.state !== ConnectionState.Connected) return;
 
   const identity = this.id.startsWith('participant-') ? this.id.slice('participant-'.length) : '';
   if (!identity) return;
@@ -830,7 +830,7 @@ function renderParticipant(participant: Participant, remove: boolean = false) {
 function renderScreenShare(room: Room) {
   const div = $('screenshare-area')!;
   const videoElm = <HTMLVideoElement>$('screenshare-video');
-  if (room.state !== RoomState.Connected) {
+  if (room.state !== ConnectionState.Connected) {
     div.style.display = 'none';
     clearScreenShareElement(videoElm);
     return;
@@ -1013,7 +1013,7 @@ function disposeCanvasCapture() {
 }
 
 function renderBitrate() {
-  if (!currentRoom || currentRoom.state !== RoomState.Connected) return;
+  if (!currentRoom || currentRoom.state !== ConnectionState.Connected) return;
   const participants: Participant[] = [...currentRoom.remoteParticipants.values()];
   participants.push(currentRoom.localParticipant);
   const container = $('participants-area');

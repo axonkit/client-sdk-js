@@ -2,7 +2,7 @@ import type { types as mediasoupTypes } from 'mediasoup-client';
 
 // --- Enums ---
 
-export enum RoomState {
+export enum ConnectionState {
   Disconnected = 'disconnected',
   Connecting = 'connecting',
   Connected = 'connected',
