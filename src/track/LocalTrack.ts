@@ -23,8 +23,6 @@ export class LocalTrack extends Track {
   protected processorElement?: HTMLMediaElement;
   private _isUpstreamPaused = false;
   private _providedByUser = false;
-  private _prevBytesSent = 0;
-  private _prevStatsTime = 0;
   private _mediaTrackMuteDebounce: ReturnType<typeof setTimeout> | undefined;
   private _handleVisibilityChange = this.onVisibilityChange.bind(this);
   /** Count of upcoming 'ended' events caused by intentional SDK stops. */
@@ -298,9 +296,12 @@ export class LocalTrack extends Track {
   /** @internal */
   override startMonitor(): void {
     if (this.monitorInterval) return;
-    this._prevBytesSent = 0;
+    this._prevBytes = 0;
     this._prevStatsTime = 0;
-    this.monitorInterval = setInterval(() => this.monitorSender(), MONITOR_FREQUENCY);
+    this.monitorInterval = setInterval(() => {
+      if (!this._producer) return;
+      this.monitorStats(() => this._producer!.getStats(), 'outbound-rtp', 'bytesSent');
+    }, MONITOR_FREQUENCY);
   }
 
   async restart(constraints?: MediaTrackConstraints): Promise<void> {
@@ -427,28 +428,6 @@ export class LocalTrack extends Track {
       }
     }
     this.emit(muted ? TrackEvent.Muted : TrackEvent.Unmuted, this);
-  }
-
-  private async monitorSender(): Promise<void> {
-    if (!this._producer) return;
-    try {
-      const stats = await this._producer.getStats();
-      let bytesSent = 0;
-      stats.forEach((report) => {
-        if (report.type === 'outbound-rtp') {
-          bytesSent += (report as any).bytesSent ?? 0;
-        }
-      });
-      const now = Date.now();
-      if (this._prevStatsTime > 0 && bytesSent > this._prevBytesSent) {
-        const elapsed = (now - this._prevStatsTime) / 1000;
-        this._currentBitrate = ((bytesSent - this._prevBytesSent) * 8) / elapsed;
-      }
-      this._prevBytesSent = bytesSent;
-      this._prevStatsTime = now;
-    } catch {
-      // stats collection may fail after producer is closed
-    }
   }
 
   // --- MediaStreamTrack mute/unmute listeners ---

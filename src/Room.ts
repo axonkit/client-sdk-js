@@ -583,30 +583,9 @@ export class Room extends TypedEmitter<RoomEvents> {
       throw new Error('Connect aborted: session torn down during join');
     }
     const joinResponse = resp as JoinResponse;
-    this.nodeId = joinResponse.serverInfo.nodeId;
-    this.applyJoinResponse(joinResponse);
     this.emit(RoomEvent.SignalConnected);
 
-    await this.transportManager.setup(
-      url,
-      joinResponse,
-      hasDtlsFingerprints,
-      this._connectOptions.rtcConfig,
-    );
-    if (gen !== this.connectGeneration) {
-      throw new Error('Connect aborted: session torn down during transport setup');
-    }
-    this.wireTransportEvents();
-
-    if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
-      this.rpcClient.bind(
-        this.transportManager.signalDataProducer,
-        this.transportManager.signalDataConsumer,
-      );
-    }
-
-    this.registerRPCHandlers();
-    this.registerNotificationHandlers();
+    await this.establishSession(url, joinResponse, hasDtlsFingerprints, gen);
 
     const readyReq: ReadyRequest = {
       rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
@@ -628,6 +607,43 @@ export class Room extends TypedEmitter<RoomEvents> {
       pingTimeout: joinResponse.pingTimeout,
       statsInterval: joinResponse.statsInterval,
     };
+  }
+
+  /**
+   * Runs the shared post-join session setup: apply the join response, create
+   * and wire the mediasoup transports, bind the RPC client over the signal
+   * data channel, and register RPC/notification handlers. Used by both the
+   * initial connect and full-reconnect paths.
+   */
+  private async establishSession(
+    url: string,
+    joinResponse: JoinResponse,
+    hasDtlsFingerprints: boolean,
+    gen: number,
+  ): Promise<void> {
+    this.nodeId = joinResponse.serverInfo.nodeId;
+    this.applyJoinResponse(joinResponse);
+
+    await this.transportManager.setup(
+      url,
+      joinResponse,
+      hasDtlsFingerprints,
+      this._connectOptions.rtcConfig,
+    );
+    if (gen !== this.connectGeneration) {
+      throw new Error('Session aborted: torn down during transport setup');
+    }
+    this.wireTransportEvents();
+
+    if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
+      this.rpcClient.bind(
+        this.transportManager.signalDataProducer,
+        this.transportManager.signalDataConsumer,
+      );
+    }
+
+    this.registerRPCHandlers();
+    this.registerNotificationHandlers();
   }
 
   /**
@@ -749,32 +765,11 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.transportManager.setCertificate(savedCert);
     }
 
-    this.nodeId = jr.serverInfo.nodeId;
-    this.applyJoinResponse(jr);
+    await this.establishSession(this.url, jr, hasDtlsFingerprints, gen);
 
-    await this.transportManager.setup(
-      this.url,
-      jr,
-      hasDtlsFingerprints,
-      this._connectOptions.rtcConfig,
-    );
-    if (gen !== this.connectGeneration) {
-      log.warn('Reconnect aborted: session torn down during transport setup');
-      return;
-    }
-    this.wireTransportEvents();
-
-    if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
-      this.rpcClient.bind(
-        this.transportManager.signalDataProducer,
-        this.transportManager.signalDataConsumer,
-      );
-    }
-
-    this.registerRPCHandlers();
-    this.registerNotificationHandlers();
-
-    this._localParticipant.init(this.rpcClient, this.transportManager);
+    // establishSession applied the join response (which init()s the local
+    // participant against the new transport); rebind remote participants so
+    // their consumers/producers reference the fresh transport too.
     for (const [, rp] of this._remoteParticipants) {
       rp.rebindTransport(this.transportManager, this.rpcClient);
     }

@@ -16,8 +16,6 @@ export class RemoteTrack extends Track {
   /** @internal */
   consumer?: mediasoupTypes.Consumer;
 
-  private _prevBytesReceived = 0;
-  private _prevStatsTime = 0;
   private _rtpTimestamp?: number;
   private _timeSyncHandle?: number;
 
@@ -104,9 +102,12 @@ export class RemoteTrack extends Track {
   /** @internal */
   override startMonitor(): void {
     if (this.monitorInterval) return;
-    this._prevBytesReceived = 0;
+    this._prevBytes = 0;
     this._prevStatsTime = 0;
-    this.monitorInterval = setInterval(() => this.monitorReceiver(), MONITOR_FREQUENCY);
+    this.monitorInterval = setInterval(() => {
+      if (!this.consumer) return;
+      this.monitorStats(() => this.consumer!.getStats(), 'inbound-rtp', 'bytesReceived');
+    }, MONITOR_FREQUENCY);
     if (this.supportsSynchronizationSources()) {
       this.registerTimeSyncUpdate();
     }
@@ -139,27 +140,5 @@ export class RemoteTrack extends Track {
       typeof RTCRtpReceiver !== 'undefined' &&
       'getSynchronizationSources' in RTCRtpReceiver.prototype
     );
-  }
-
-  private async monitorReceiver(): Promise<void> {
-    if (!this.consumer) return;
-    try {
-      const stats = await this.consumer.getStats();
-      let bytesReceived = 0;
-      stats.forEach((report) => {
-        if (report.type === 'inbound-rtp') {
-          bytesReceived += (report as any).bytesReceived ?? 0;
-        }
-      });
-      const now = Date.now();
-      if (this._prevStatsTime > 0 && bytesReceived > this._prevBytesReceived) {
-        const elapsed = (now - this._prevStatsTime) / 1000;
-        this._currentBitrate = ((bytesReceived - this._prevBytesReceived) * 8) / elapsed;
-      }
-      this._prevBytesReceived = bytesReceived;
-      this._prevStatsTime = now;
-    } catch {
-      // stats collection may fail after consumer is closed
-    }
   }
 }

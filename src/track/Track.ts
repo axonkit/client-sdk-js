@@ -43,6 +43,10 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
   protected _currentBitrate = 0;
   protected monitorInterval?: ReturnType<typeof setInterval>;
 
+  /** Previous byte count from the last monitor sample. */
+  protected _prevBytes = 0;
+  protected _prevStatsTime = 0;
+
   constructor(
     kind: TrackKind,
     source: TrackSource = TrackSource.Unknown,
@@ -110,6 +114,42 @@ export abstract class Track extends TypedEmitter<TrackEvents> {
     if (this.monitorInterval) {
       clearInterval(this.monitorInterval);
       this.monitorInterval = undefined;
+    }
+  }
+
+  /**
+   * Samples RTP bytes from a stats report and updates {@link currentBitrate}.
+   * Shared by local (producer/outbound) and remote (consumer/inbound) tracks:
+   * they only differ in which report type and byte field to read.
+   *
+   * @param getStats  returns the underlying transport/producer/consumer stats,
+   *                  or undefined when the source is already closed.
+   * @param reportType the RTC stats report type to aggregate (e.g. outbound-rtp).
+   * @param bytesField the byte field name on that report (e.g. bytesSent).
+   */
+  protected async monitorStats(
+    getStats: () => Promise<RTCStatsReport> | undefined,
+    reportType: string,
+    bytesField: string,
+  ): Promise<void> {
+    try {
+      const stats = await getStats();
+      if (!stats) return;
+      let bytes = 0;
+      stats.forEach((report) => {
+        if (report.type === reportType) {
+          bytes += (report as unknown as Record<string, number>)[bytesField] ?? 0;
+        }
+      });
+      const now = Date.now();
+      if (this._prevStatsTime > 0 && bytes > this._prevBytes) {
+        const elapsed = (now - this._prevStatsTime) / 1000;
+        this._currentBitrate = ((bytes - this._prevBytes) * 8) / elapsed;
+      }
+      this._prevBytes = bytes;
+      this._prevStatsTime = now;
+    } catch {
+      // stats collection may fail after the producer/consumer is closed
     }
   }
 
