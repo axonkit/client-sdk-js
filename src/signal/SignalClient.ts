@@ -12,6 +12,17 @@ const log = getLogger('SignalClient');
 /** Hard cap on signalling HTTP requests so a stalled server cannot hang joins. */
 const SIGNAL_TIMEOUT_MS = 10_000;
 
+/**
+ * Append a fixed API path to the user-supplied server URL. Uses URL parsing
+ * instead of string concatenation so an existing path prefix, query string or
+ * hash on the base URL is preserved.
+ */
+function endpointFor(baseUrl: string, path: string): string {
+  const u = new URL(baseUrl);
+  u.pathname = `${u.pathname.replace(/\/+$/, '')}${path}`;
+  return u.toString();
+}
+
 export interface JoinResult {
   response: JoinResponse | ReconnectResponse;
   logId: string;
@@ -34,11 +45,7 @@ export class SignalClient {
   }
 
   async join(url: string, request: JoinRequest): Promise<JoinResult> {
-    const u = new URL(`${url}/rtc/join`);
-    if (request.room.name) {
-      u.searchParams.set('room', request.room.name);
-    }
-    const endpoint = u.toString();
+    const endpoint = endpointFor(url, '/rtc/join');
     log.info(`Joining room at ${endpoint}`);
 
     const resp = await fetch(endpoint, {
@@ -72,12 +79,8 @@ export class SignalClient {
     return { response, logId: this.logId };
   }
 
-  async connect(url: string, request: ConnectRequest, roomName?: string): Promise<void> {
-    const u = new URL(`${url}/rtc/connect`);
-    if (roomName) {
-      u.searchParams.set('room', roomName);
-    }
-    const endpoint = u.toString();
+  async connect(url: string, request: ConnectRequest): Promise<void> {
+    const endpoint = endpointFor(url, '/rtc/connect');
     log.info(`Connecting transports at ${endpoint}`);
 
     const resp = await fetch(endpoint, {

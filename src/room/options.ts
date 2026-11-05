@@ -95,14 +95,6 @@ export interface RoomOptions {
   stopLocalTrackOnUnpublish?: boolean;
 
   /**
-   * Room name sent in the JoinRequest for server-side routing and room
-   * creation. Optional when the JWT token carries a `room` claim — the
-   * server falls back to it. Required for anonymous joins (no token).
-   * When both are present they must match.
-   */
-  roomName?: string;
-
-  /**
    * Room metadata (e.g. meeting topic) sent in the JoinRequest when the
    * room is auto-created. Only takes effect for the first participant
    * that causes the room to be created. Maximum size: 64 KB.

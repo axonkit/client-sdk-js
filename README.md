@@ -55,8 +55,7 @@ room
     }
   });
 
-// Connect (token is optional when the server allows anonymous joins —
-// pass roomName in RoomOptions instead)
+// Connect with a JWT token; the room is taken from the token's room grant
 await room.connect('https://your-server.com', 'your-jwt-token');
 
 // Publish camera and microphone
@@ -87,7 +86,7 @@ await room.disconnect();
 
 | Method | Description |
 | --- | --- |
-| `connect(url, token?, options?)` | Connect to a room (token optional for anonymous servers) |
+| `connect(url, token, options?)` | Connect to a room with a JWT token |
 | `disconnect(stopTracks?)` | Disconnect and optionally stop local tracks |
 | `switchActiveDevice(kind, deviceId)` | Switch camera / microphone / output device |
 | `startAudio()` | Resume audio playback (autoplay policy) |

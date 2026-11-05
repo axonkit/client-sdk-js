@@ -235,7 +235,7 @@ export interface ConnectionSettings {
 // --- Join / Connect ---
 
 export interface JoinRequest {
-  room: { name: string; metadata?: string };
+  room: { metadata?: string };
   clientInfo: ClientInfo;
   connectionSettings: ConnectionSettings;
   reconnect: boolean;

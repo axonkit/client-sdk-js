@@ -74,8 +74,31 @@ const storedUrl = searchParams.get('url') ?? 'http://localhost:7990';
 const storedRoomName = searchParams.get('room') ?? 'test';
 const storedToken = searchParams.get('token') ?? '';
 (<HTMLInputElement>$('url')).value = storedUrl;
-(<HTMLInputElement>$('room-name')).value = storedRoomName;
 (<HTMLInputElement>$('token')).value = storedToken;
+
+/**
+ * The demo never signs tokens itself: the api-secret must stay on a backend.
+ * When no token is supplied we ask the dev server (-dev only) to mint one,
+ * mirroring how a production deployment would call your own token server.
+ */
+async function resolveToken(url: string, token: string): Promise<string> {
+  const trimmed = token.trim();
+  if (trimmed !== '') return trimmed;
+
+  const endpoint = `${url.replace(/^ws/, 'http')}/dev/token?room=${encodeURIComponent(
+    storedRoomName,
+  )}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    throw new Error(
+      `no token supplied and ${endpoint} returned HTTP ${res.status}; ` +
+        'paste a token or start the server with -dev',
+    );
+  }
+  const body = (await res.json()) as { token: string };
+  (<HTMLInputElement>$('token')).value = body.token;
+  return body.token;
+}
 
 // function updateSearchParams(url: string, token: string) {
 //   const params = new URLSearchParams({ url, token });
@@ -96,8 +119,13 @@ const appActions = {
 
   connectWithFormInput: async () => {
     const url = (<HTMLInputElement>$('url')).value;
-    const roomName = (<HTMLInputElement>$('room-name')).value.trim() || 'test';
-    const token = (<HTMLInputElement>$('token')).value;
+    let token: string;
+    try {
+      token = await resolveToken(url, (<HTMLInputElement>$('token')).value);
+    } catch (error) {
+      appendLog('Could not obtain a token:', (error as Error).message);
+      return;
+    }
     const simulcast = (<HTMLInputElement>$('simulcast')).checked;
     const dynacast = (<HTMLInputElement>$('dynacast')).checked;
     const forceTURN = (<HTMLInputElement>$('force-turn')).checked;
@@ -114,7 +142,6 @@ const appActions = {
     // updateSearchParams(url, token);
 
     const roomOpts: RoomOptions = {
-      roomName,
       adaptiveStream,
       dynacast,
       publishDefaults: {

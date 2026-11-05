@@ -561,7 +561,6 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     const joinRequest: JoinRequest = {
       room: {
-        name: this._options.roomName ?? '',
         metadata: this._options.metadata,
       },
       clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
@@ -720,7 +719,9 @@ export class Room extends TypedEmitter<RoomEvents> {
     const reconnectLastN = this._options.lastN ?? 0;
 
     const joinRequest: JoinRequest = {
-      room: { name: this._name },
+      // Room is resolved from the token grant on the server; reconnect must
+      // not carry a name either.
+      room: {},
       clientInfo: { sdk: 1, version: VERSION, protocol: PROTOCOL_VERSION },
       connectionSettings: {
         autoSubscribe: this._connectOptions.autoSubscribe ?? true,

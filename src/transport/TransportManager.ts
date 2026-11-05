@@ -380,7 +380,7 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
       transports,
     };
 
-    await this.signalClient.connect(this.url, request, this.joinResponse.room?.name);
+    await this.signalClient.connect(this.url, request);
   }
 
   private async setupSignalChannels(jr: JoinResponse): Promise<void> {
