@@ -1,6 +1,6 @@
 {
   "name": "@axonkit/client-sdk-js",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "AxonKit JS/TS Client SDK based on mediasoup-client",
   "main": "dist/axonkit-client.umd.js",
   "module": "dist/axonkit-client.esm.js",
