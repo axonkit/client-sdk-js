@@ -136,7 +136,6 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
         return await this.publishTrack(track, {
           ...publishOptions,
           source: TrackSource.Camera,
-          stopTrackOnUnpublish: true,
         });
       } catch (e) {
         this._lastCameraError = e instanceof Error ? e : new Error(String(e));
@@ -166,7 +165,6 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
         return await this.publishTrack(track, {
           ...publishOptions,
           source: TrackSource.Microphone,
-          stopTrackOnUnpublish: true,
         });
       } catch (e) {
         this._lastMicrophoneError = e instanceof Error ? e : new Error(String(e));
@@ -193,7 +191,6 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
         pub = await this.publishTrack(t, {
           ...publishOptions,
           source: t.source,
-          stopTrackOnUnpublish: true,
         });
       }
       return pub;
@@ -459,7 +456,7 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
       encodings,
       codecOptions,
       codec,
-      stopTracks: opts.stopTrackOnUnpublish ?? false,
+      stopTracks: false,
       disableTrackOnPause: true,
       appData: { clientTrackId, source: localTrack.source },
     });
@@ -555,10 +552,11 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
    * Unpublish a track from the room.
    * @param track - The track or MediaStreamTrack to unpublish.
    * @param stopOnUnpublish - Whether to stop the track after unpublishing.
-   *   Defaults to `false`.
+   *   Defaults to {@link RoomOptions.stopLocalTrackOnUnpublish} (`true`).
    */
   async unpublishTrack(
     track: LocalTrack | MediaStreamTrack,
+    stopOnUnpublish?: boolean,
   ): Promise<LocalTrackPublication | undefined> {
     let trackSid: string | undefined;
 
@@ -584,6 +582,8 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
       log.warn(`Failed to unpublish track ${trackSid}`, err);
     }
 
+    const stopLocalTrack = stopOnUnpublish ?? this.roomOptions?.stopLocalTrackOnUnpublish ?? true;
+
     const localTrack = publication?.track instanceof LocalTrack ? publication.track : undefined;
     localTrack?.stopMonitor();
 
@@ -592,6 +592,9 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
 
     if (localTrack) {
       localTrack.producer = undefined;
+      if (stopLocalTrack) {
+        localTrack.stop();
+      }
     }
 
     if (publication) {

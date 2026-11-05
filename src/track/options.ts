@@ -525,12 +525,6 @@ export interface TrackPublishDefaults {
    * @see {@link PublishCodecOptions}
    */
   codecOptions?: PublishCodecOptions;
-
-  /**
-   * should local track be stopped when they are unpublished. defaults to false
-   * set this to true if you would prefer to clean up unpublished local track automatically.
-   */
-  stopTrackOnUnpublish?: boolean;
 }
 
 /**

@@ -68,6 +68,16 @@ export interface RoomOptions {
   publishDefaults?: TrackPublishDefaults;
 
   /**
+   * Automatically stop local tracks when they are unpublished, including
+   * via {@link LocalParticipant.setCameraEnabled} et al. with `false`.
+   * Pass `false` explicitly to {@link LocalParticipant.unpublishTrack} to
+   * keep a track alive across unpublish/republish cycles.
+   *
+   * @defaultValue `true`
+   */
+  stopLocalTrackOnUnpublish?: boolean;
+
+  /**
    * Room name sent in the JoinRequest for server-side routing and room
    * creation. Optional when the JWT token carries a `room` claim — the
    * server falls back to it. Required for anonymous joins (no token).
