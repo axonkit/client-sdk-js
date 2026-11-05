@@ -205,6 +205,10 @@ export class Room extends TypedEmitter<RoomEvents> {
 
   private reconnectAttempts = 0;
   private reconnectPolicy: ReconnectPolicy = new DefaultReconnectPolicy();
+  /** Monotonic token bumped whenever the session is torn down (timeout, disconnect, cleanup).
+   *  In-flight connect/reconnect flows capture it at start and abort when it goes stale. */
+  private connectGeneration = 0;
+  private reconnectInProgress = false;
 
   private statsCollector?: StatsCollector;
   private pageLeaveHandler?: () => void;
@@ -495,9 +499,16 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.setState(ConnectionState.Connecting);
 
     const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
+    // Bump the generation so any previous in-flight flow (e.g. a late
+    // performReconnect) is invalidated before we start a fresh one.
+    const gen = ++this.connectGeneration;
 
     try {
-      const connectResult = await this.withTimeout(this.performConnect(url), timeoutMs);
+      const connectResult = await this.withTimeout(this.performConnect(url, gen), timeoutMs);
+
+      // The session was torn down while connecting (disconnect() or a new
+      // connect) — ignore the result instead of resurrecting the room.
+      if (gen !== this.connectGeneration) return;
 
       this.setState(ConnectionState.Connected);
       this.scheduleReadySnapshotReplay(connectResult.readyParticipants);
@@ -514,13 +525,17 @@ export class Room extends TypedEmitter<RoomEvents> {
 
       this.setupPageLeaveHandler();
     } catch (err) {
+      // Invalidate the still-running performConnect so it aborts at its next
+      // checkpoint instead of recreating transports after we closed them.
+      this.connectGeneration++;
       this.setState(ConnectionState.Disconnected);
+      this.rpcClient?.close();
       this.transportManager?.close();
       throw err;
     }
   }
 
-  private async performConnect(url: string) {
+  private async performConnect(url: string, gen: number) {
     if (this.transportManager) {
       this.transportManager.close();
     }
@@ -552,6 +567,10 @@ export class Room extends TypedEmitter<RoomEvents> {
     };
 
     const { response: resp } = await this.signalClient.join(url, joinRequest);
+    // Abort if the session was torn down (timeout / disconnect) while joining.
+    if (gen !== this.connectGeneration) {
+      throw new Error('Connect aborted: session torn down during join');
+    }
     const joinResponse = resp as JoinResponse;
     this.nodeId = joinResponse.serverInfo.nodeId;
     this.applyJoinResponse(joinResponse);
@@ -563,6 +582,9 @@ export class Room extends TypedEmitter<RoomEvents> {
       hasDtlsFingerprints,
       this._connectOptions.rtcConfig,
     );
+    if (gen !== this.connectGeneration) {
+      throw new Error('Connect aborted: session torn down during transport setup');
+    }
     this.wireTransportEvents();
 
     if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -579,6 +601,9 @@ export class Room extends TypedEmitter<RoomEvents> {
       rtpCapabilities: this.transportManager.device.recvRtpCapabilities,
     };
     const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+    if (gen !== this.connectGeneration) {
+      throw new Error('Connect aborted: session torn down while waiting for ready');
+    }
 
     if (this._localParticipant) {
       this._localParticipant.state = ParticipantState.Joined;
@@ -612,36 +637,52 @@ export class Room extends TypedEmitter<RoomEvents> {
   // --- Reconnect ---
 
   private async attemptReconnect(): Promise<void> {
+    // Multiple failure sources (transport failure, ping timeout, signal drop)
+    // can fire concurrently; only one reconnect flow may run at a time or two
+    // joins would race each other and both replace the transports.
+    if (this.reconnectInProgress) return;
+    this.reconnectInProgress = true;
+
     this.setState(ConnectionState.Reconnecting);
     this.emit(RoomEvent.Reconnecting);
-    this.reconnectAttempts++;
-
-    const delay = this.reconnectPolicy.nextRetryDelayInMs({
-      retryCount: this.reconnectAttempts,
-      elapsedMs: 0,
-    });
-    if (delay === null) {
-      log.warn('Reconnect policy says stop');
-      this.cleanup(DisconnectReason.StateMismatch);
-      return;
-    }
-
-    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    await new Promise((r) => setTimeout(r, delay));
-
-    if (this._state !== ConnectionState.Reconnecting) return;
-
-    const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
 
     try {
-      await this.withTimeout(this.performReconnect(), timeoutMs);
-    } catch (err) {
-      log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
-      this.attemptReconnect();
+      while (true) {
+        this.reconnectAttempts++;
+
+        const delay = this.reconnectPolicy.nextRetryDelayInMs({
+          retryCount: this.reconnectAttempts,
+          elapsedMs: 0,
+        });
+        if (delay === null) {
+          log.warn('Reconnect policy says stop');
+          this.cleanup(DisconnectReason.StateMismatch);
+          return;
+        }
+
+        log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+        await new Promise((r) => setTimeout(r, delay));
+
+        if (this._state !== ConnectionState.Reconnecting) return;
+
+        const timeoutMs = this._connectOptions.peerConnectionTimeout ?? 15_000;
+        const gen = this.connectGeneration;
+
+        try {
+          await this.withTimeout(this.performReconnect(gen), timeoutMs);
+          return;
+        } catch (err) {
+          // The room was disconnected while we were reconnecting — stop.
+          if (gen !== this.connectGeneration) return;
+          log.warn(`Reconnect attempt ${this.reconnectAttempts} failed`, err);
+        }
+      }
+    } finally {
+      this.reconnectInProgress = false;
     }
   }
 
-  private async performReconnect(): Promise<void> {
+  private async performReconnect(gen: number): Promise<void> {
     const fingerprints = this.transportManager.getDtlsFingerprints();
     const hasDtlsFingerprints = fingerprints.length > 0;
     const savedCert = this.transportManager.getCertificate();
@@ -665,9 +706,14 @@ export class Room extends TypedEmitter<RoomEvents> {
     };
 
     const { response: resp } = await this.signalClient.join(this.url, joinRequest);
+    if (gen !== this.connectGeneration) {
+      log.warn('Reconnect aborted: session torn down during join');
+      return;
+    }
 
     if (isReconnectResponse(resp)) {
       await this.transportManager.restartIce(resp.iceParameters);
+      if (gen !== this.connectGeneration) return;
       this.setState(ConnectionState.Connected);
       this.reconnectAttempts = 0;
       this.reconnectPolicy.reset?.();
@@ -697,6 +743,10 @@ export class Room extends TypedEmitter<RoomEvents> {
       hasDtlsFingerprints,
       this._connectOptions.rtcConfig,
     );
+    if (gen !== this.connectGeneration) {
+      log.warn('Reconnect aborted: session torn down during transport setup');
+      return;
+    }
     this.wireTransportEvents();
 
     if (this.transportManager.signalDataProducer && this.transportManager.signalDataConsumer) {
@@ -719,6 +769,10 @@ export class Room extends TypedEmitter<RoomEvents> {
       syncState: this.buildSyncState(),
     };
     const readyResp = await this.rpcClient.request<ReadyResponse>('ready', readyReq);
+    if (gen !== this.connectGeneration) {
+      log.warn('Reconnect aborted: session torn down while waiting for ready');
+      return;
+    }
 
     this.applyReadySnapshot(readyResp, true);
 
@@ -739,6 +793,13 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     this.startHeartbeat(jr.pingInterval, jr.pingTimeout);
     this.startStatsCollector(jr.statsInterval);
+
+    // Do not resurrect a room that was disconnected (user disconnect() or
+    // cleanup) while the reconnect flow was still running.
+    if (gen !== this.connectGeneration) {
+      log.warn('Reconnect completed after teardown, discarding result');
+      return;
+    }
 
     this.setState(ConnectionState.Connected);
     this.reconnectAttempts = 0;
@@ -1401,6 +1462,22 @@ export class Room extends TypedEmitter<RoomEvents> {
   private handleActiveSpeakersChanged(body: ActiveSpeakersChangedNotification): void {
     const activeSpeakers: Participant[] = [];
     const now = new Date();
+    const speakerSids = new Set(body.speakers.map((s) => s.participantSid));
+
+    // The server only reports *currently* active speakers. Anyone who was
+    // speaking but is absent from this update has stopped — converge their
+    // state, otherwise isSpeaking/audioLevel would stay stale forever.
+    const allParticipants: Participant[] = [];
+    if (this._localParticipant) allParticipants.push(this._localParticipant);
+    for (const [, p] of this._remoteParticipants) allParticipants.push(p);
+    for (const p of allParticipants) {
+      if (!speakerSids.has(p.sid) && p.isSpeaking) {
+        p.isSpeaking = false;
+        p.audioLevel = 0;
+        p.emit(ParticipantEvent.IsSpeakingChanged, false);
+      }
+    }
+
     for (const speaker of body.speakers) {
       let participant: Participant | undefined;
       if (speaker.participantSid === this.participantSid) {
@@ -1494,6 +1571,7 @@ export class Room extends TypedEmitter<RoomEvents> {
           transportManager: this.transportManager,
           rpc: this.rpcClient,
           autoSubscribe: this._connectOptions.autoSubscribe,
+          streamReceiver: this.dataStreamReceiver,
         },
       );
       this._remoteParticipants.set(body.publisherSid, newRp);
@@ -1601,6 +1679,9 @@ export class Room extends TypedEmitter<RoomEvents> {
 
   private cleanup(reason: DisconnectReason, stopTracks = true): void {
     if (this._state === ConnectionState.Disconnected) return;
+    // Invalidate any in-flight connect/reconnect so a late completion cannot
+    // resurrect the room or recreate transports after this teardown.
+    this.connectGeneration++;
     this.setState(ConnectionState.Disconnected);
 
     this.stopHeartbeat();
@@ -1609,10 +1690,15 @@ export class Room extends TypedEmitter<RoomEvents> {
     this.transportManager?.close();
 
     this._localParticipant?.closeAll(!stopTracks);
+    // Remove Room-wired listeners so a subsequent connect() on this Room does
+    // not stack duplicate forwarding listeners on the same participant.
+    this._localParticipant?.removeAllListeners();
     for (const [, rp] of this._remoteParticipants) {
       rp.closeAll();
     }
     this._remoteParticipants.clear();
+    this._groups.clear();
+    this._sharedState.clear();
 
     if (this.pageLeaveHandler && isWeb()) {
       window.removeEventListener('beforeunload', this.pageLeaveHandler);

@@ -13,6 +13,11 @@ import type {
 
 const log = getLogger('TransportManager');
 
+/** Grace period before a 'disconnected' ICE state is treated as a failure.
+ *  Transient disconnects self-heal as ICE restarts on its own; triggering a
+ *  full reconnect for them would tear down a recoverable session. */
+const DISCONNECTED_GRACE_MS = 5_000;
+
 export type ProduceCallback = (
   params: {
     kind: mediasoupTypes.MediaKind;
@@ -54,6 +59,7 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
   private certificate: RTCCertificate | null = null;
   private pendingProduceCallbacks = new Map<string, ProduceCallback>();
   private pendingProduceDataCallbacks = new Map<string, ProduceDataCallback>();
+  private disconnectedGraceTimers = new Map<'send' | 'recv', ReturnType<typeof setTimeout>>();
 
   constructor(signalClient: SignalClient) {
     super();
@@ -208,6 +214,15 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
   close(): void {
     if (!this.sendTransport && !this.recvTransport) return;
 
+    for (const [, timer] of this.disconnectedGraceTimers) {
+      clearTimeout(timer);
+    }
+    this.disconnectedGraceTimers.clear();
+    // Pending produce callbacks hold closures over tracks/options; drop them
+    // so they cannot leak (and never fire) after teardown.
+    this.pendingProduceCallbacks.clear();
+    this.pendingProduceDataCallbacks.clear();
+
     this.signalDataProducer?.close();
     this.signalDataConsumer?.close();
     this.sendTransport?.close();
@@ -274,10 +289,7 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
     });
 
     this.sendTransport!.on('connectionstatechange', (state: string) => {
-      log.info(`Send transport connection state: ${state}`);
-      if (state === 'failed' || state === 'disconnected') {
-        this.emit('connectionFailed', 'send');
-      }
+      this.handleTransportStateChange('send', state);
     });
 
     // --- Recv transport events ---
@@ -296,11 +308,45 @@ export class TransportManager extends TypedEmitter<TransportEvents> {
     });
 
     this.recvTransport!.on('connectionstatechange', (state: string) => {
-      log.info(`Recv transport connection state: ${state}`);
-      if (state === 'failed' || state === 'disconnected') {
-        this.emit('connectionFailed', 'recv');
-      }
+      this.handleTransportStateChange('recv', state);
     });
+  }
+
+  private handleTransportStateChange(direction: 'send' | 'recv', state: string): void {
+    log.info(`${direction} transport connection state: ${state}`);
+
+    if (state === 'failed') {
+      this.clearDisconnectGrace(direction);
+      this.emit('connectionFailed', direction);
+      return;
+    }
+
+    if (state === 'disconnected') {
+      // Only escalate after a grace period: transient disconnects are common
+      // (network switches, NAT rebinding) and ICE usually recovers by itself.
+      if (this.disconnectedGraceTimers.has(direction)) return;
+      const timer = setTimeout(() => {
+        this.disconnectedGraceTimers.delete(direction);
+        const transport = direction === 'send' ? this.sendTransport : this.recvTransport;
+        const current = transport?.connectionState;
+        if (current === 'disconnected' || current === 'failed') {
+          this.emit('connectionFailed', direction);
+        }
+      }, DISCONNECTED_GRACE_MS);
+      this.disconnectedGraceTimers.set(direction, timer);
+      return;
+    }
+
+    // connected / completed / checking / new — cancel any pending escalation.
+    this.clearDisconnectGrace(direction);
+  }
+
+  private clearDisconnectGrace(direction: 'send' | 'recv'): void {
+    const timer = this.disconnectedGraceTimers.get(direction);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectedGraceTimers.delete(direction);
+    }
   }
 
   private async connectTransports(transports: TransportConnectInfo[]): Promise<void> {

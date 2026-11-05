@@ -68,6 +68,10 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
   private transportManager!: TransportManager;
   private producers = new Map<string, mediasoupTypes.Producer>();
   private dataProducers = new Map<string, mediasoupTypes.DataProducer>();
+  /** DataProducers for publishData, cached by publish options. */
+  private dataProducerCache = new Map<string, mediasoupTypes.DataProducer>();
+  /** Unsubscribe callbacks removing per-publication listeners from a LocalTrack. */
+  private trackPublishCleanups = new Map<LocalTrack, () => void>();
   private dataStreamSender?: DataStreamSender;
 
   private _lastCameraError?: Error;
@@ -98,6 +102,9 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
   init(rpc: RPCClient, transportManager: TransportManager): void {
     this.rpc = rpc;
     this.transportManager = transportManager;
+    // Reconnects call init() again — close the previous sender so its old
+    // DataProducer (bound to the dead transport) is not leaked.
+    this.dataStreamSender?.close();
     this.dataStreamSender = new DataStreamSender(rpc, transportManager);
   }
 
@@ -498,19 +505,25 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
     localTrack.startMonitor();
     localTrack.addVisibilityListener();
 
-    localTrack.on(TrackEvent.Muted, () => {
+    // Drop listeners wired by a previous publish of this same track (e.g.
+    // republishAllTracks after reconnect) — otherwise every republish stacks
+    // another set and mute/unmute would fire duplicate RPCs with stale sids.
+    this.trackPublishCleanups.get(localTrack)?.();
+
+    const onMuted = () => {
       publication.muted = true;
       this.emit(ParticipantEvent.TrackMuted, publication);
       this.rpc.request('track.mute', { trackSid, muted: true }).catch(() => {});
-    });
-
-    localTrack.on(TrackEvent.Unmuted, () => {
+    };
+    const onUnmuted = () => {
       publication.muted = false;
       this.emit(ParticipantEvent.TrackUnmuted, publication);
       this.rpc.request('track.mute', { trackSid, muted: false }).catch(() => {});
-    });
+    };
+    localTrack.on(TrackEvent.Muted, onMuted);
+    localTrack.on(TrackEvent.Unmuted, onUnmuted);
 
-    producer.observer.on('trackended', () => {
+    const onTrackEnded = () => {
       const isManaged =
         !localTrack.isUserProvided &&
         (localTrack.source === TrackSource.Camera || localTrack.source === TrackSource.Microphone);
@@ -534,11 +547,18 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
           log.warn(`Failed to auto-unpublish track ${trackSid}`, err);
         });
       }
-    });
+    };
+    producer.observer.on('trackended', onTrackEnded);
 
     producer.on('transportclose', () => {
       log.info(`Transport closed for track ${trackSid}`);
       this.producers.delete(trackSid);
+    });
+
+    this.trackPublishCleanups.set(localTrack, () => {
+      localTrack.off(TrackEvent.Muted, onMuted);
+      localTrack.off(TrackEvent.Unmuted, onUnmuted);
+      producer.observer.off('trackended', onTrackEnded);
     });
 
     this.emit(ParticipantEvent.TrackPublished, publication);
@@ -586,6 +606,10 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
 
     const localTrack = publication?.track instanceof LocalTrack ? publication.track : undefined;
     localTrack?.stopMonitor();
+    if (localTrack) {
+      this.trackPublishCleanups.get(localTrack)?.();
+      this.trackPublishCleanups.delete(localTrack);
+    }
 
     producer?.close();
     this.producers.delete(trackSid);
@@ -608,33 +632,86 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
   }
 
   async publishData(data: Uint8Array, options?: DataPublishOptions): Promise<void> {
-    const sendTransport = this.transportManager.sendTransport;
-    if (!sendTransport) throw new Error('Send transport not available');
+    if (data.byteLength > 262_144) {
+      throw new Error(`publishData payload too large: ${data.byteLength} bytes (max 256 KiB)`);
+    }
+    const dp = await this.ensureDataProducer(options);
+    dp.send(data);
+    log.debug(`Sent ${data.byteLength} bytes over data track`);
+  }
 
-    const clientTrackId = generateLogId();
-
-    const dataProducer = await sendTransport.produceData({
+  private static dataProducerOptionsKey(options?: DataPublishOptions): string {
+    return JSON.stringify({
+      label: options?.label ?? 'data',
+      name: options?.name ?? 'data',
       ordered: options?.ordered ?? true,
       maxRetransmits: options?.maxRetransmits,
       maxPacketLifeTime: options?.maxPacketLifeTime,
-      label: options?.label ?? 'data',
-      protocol: '',
+    });
+  }
+
+  /**
+   * Lazily creates (and caches by publish options) a DataProducer. The
+   * 'producedata' handshake requires an appData.clientTrackId plus a matching
+   * callback registered on the TransportManager — without it the produceData
+   * promise would always be rejected by the transport errback.
+   */
+  private async ensureDataProducer(options?: DataPublishOptions): Promise<mediasoupTypes.DataProducer> {
+    const key = LocalParticipant.dataProducerOptionsKey(options);
+    const cached = this.dataProducerCache.get(key);
+    if (cached && !cached.closed) {
+      return cached;
+    }
+
+    const sendTransport = this.transportManager.sendTransport;
+    if (!sendTransport) throw new Error('Send transport not available');
+
+    const label = options?.label ?? 'data';
+    const name = options?.name ?? 'data';
+    const clientTrackId = generateLogId();
+
+    const publishPromise = new Promise<string>((resolve, reject) => {
+      this.transportManager.registerProduceDataCallback(
+        clientTrackId,
+        async (params, callback, errback) => {
+          try {
+            const req: DataTrackPublishRequest = {
+              clientTrackId,
+              transportSid: sendTransport.id,
+              sctpStreamParameters: params.sctpStreamParameters as any,
+              name,
+              label: params.label ?? label,
+              protocol: params.protocol ?? '',
+            };
+            const resp = await this.rpc.request<DataTrackPublishResponse>('dataTrack.publish', req);
+            callback({ id: resp.dataTrackSid });
+            resolve(resp.dataTrackSid);
+          } catch (err) {
+            errback(err instanceof Error ? err : new Error(String(err)));
+            reject(err);
+          }
+        },
+      );
     });
 
-    const req: DataTrackPublishRequest = {
-      clientTrackId,
-      transportSid: sendTransport.id,
-      sctpStreamParameters: dataProducer.sctpStreamParameters as any,
-      name: options?.name ?? 'data',
-      label: options?.label ?? 'data',
-      protocol: '',
-    };
-
-    const resp = await this.rpc.request<DataTrackPublishResponse>('dataTrack.publish', req);
-    this.dataProducers.set(resp.dataTrackSid, dataProducer);
-
-    dataProducer.send(data);
-    log.info(`Published data track ${resp.dataTrackSid}`);
+    try {
+      const dataProducer = await sendTransport.produceData({
+        ordered: options?.ordered ?? true,
+        maxRetransmits: options?.maxRetransmits,
+        maxPacketLifeTime: options?.maxPacketLifeTime,
+        label,
+        protocol: '',
+        appData: { clientTrackId },
+      });
+      const dataTrackSid = await publishPromise;
+      this.dataProducers.set(dataTrackSid, dataProducer);
+      this.dataProducerCache.set(key, dataProducer);
+      log.info(`Published data track ${dataTrackSid} (label=${label})`);
+      return dataProducer;
+    } catch (err) {
+      this.dataProducerCache.delete(key);
+      throw err;
+    }
   }
 
   /**
@@ -959,6 +1036,10 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
       dp.close();
     }
     this.dataStreamSender?.close();
+    for (const [, cleanup] of this.trackPublishCleanups) {
+      cleanup();
+    }
+    this.trackPublishCleanups.clear();
     if (!keepTracks) {
       for (const [, pub] of this.trackPublications) {
         if (pub.track instanceof LocalTrack) {
@@ -968,6 +1049,7 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
     }
     this.producers.clear();
     this.dataProducers.clear();
+    this.dataProducerCache.clear();
     this.trackPublications.clear();
     this.audioTrackPublications.clear();
     this.videoTrackPublications.clear();
@@ -1160,8 +1242,16 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
 
   /** @internal */
   clearPublications(): void {
+    // Publications are dropped without unpublishTrack (used before a full
+    // republish) — run their listener cleanups so tracks don't accumulate
+    // stale handlers keyed to the previous publish.
+    for (const [, cleanup] of this.trackPublishCleanups) {
+      cleanup();
+    }
+    this.trackPublishCleanups.clear();
     this.producers.clear();
     this.dataProducers.clear();
+    this.dataProducerCache.clear();
     this.trackPublications.clear();
     this.audioTrackPublications.clear();
     this.videoTrackPublications.clear();
