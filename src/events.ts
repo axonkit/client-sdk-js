@@ -75,7 +75,7 @@ export enum RoomEvent {
   /**
    * A remote participant has left the room.
    *
-   * args: `(participant: RemoteParticipant, reason?: string)`
+   * args: `(participant: RemoteParticipant, reason?: DisconnectReason)`
    */
   ParticipantDisconnected = 'participantDisconnected',
 

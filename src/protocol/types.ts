@@ -507,7 +507,7 @@ export interface ParticipantJoinedNotification {
 
 export interface ParticipantLeftNotification {
   participantSid: string;
-  reason?: string;
+  reason?: DisconnectReason;
 }
 
 export interface ParticipantUpdatedNotification {

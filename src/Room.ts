@@ -83,7 +83,10 @@ export type RoomEvents = {
   [RoomEvent.MediaDevicesChanged]: () => void;
   [RoomEvent.MediaDevicesError]: (error: Error) => void;
   [RoomEvent.ParticipantConnected]: (participant: RemoteParticipant) => void;
-  [RoomEvent.ParticipantDisconnected]: (participant: RemoteParticipant, reason?: string) => void;
+  [RoomEvent.ParticipantDisconnected]: (
+    participant: RemoteParticipant,
+    reason?: DisconnectReason,
+  ) => void;
   [RoomEvent.ParticipantUpdated]: (participant: RemoteParticipant) => void;
   [RoomEvent.ParticipantMetadataChanged]: (
     prevMetadata: string | undefined,
