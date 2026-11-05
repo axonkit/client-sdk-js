@@ -178,7 +178,7 @@ export type { DeviceFailureKind } from './utils/deviceFailure';
 
 // Reconnect Policy
 export { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
-export type { ReconnectContext } from './room/DefaultReconnectPolicy';
+export type { ReconnectContext, ReconnectPolicy } from './room/DefaultReconnectPolicy';
 
 // Connection Diagnostics
 export { ConnectionCheck, CheckStatus } from './connectionHelper/ConnectionCheck';

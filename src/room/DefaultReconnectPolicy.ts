@@ -7,6 +7,24 @@ export interface ReconnectContext {
 }
 
 /**
+ * Custom reconnection strategy. Provide an implementation via
+ * {@link RoomOptions.reconnectPolicy} to control retry behaviour after a
+ * connection interruption.
+ */
+export interface ReconnectPolicy {
+  /**
+   * Returns the number of milliseconds to wait before the next reconnect
+   * attempt, or `null` if the policy says to stop trying.
+   */
+  nextRetryDelayInMs(context: ReconnectContext): number | null;
+
+  /**
+   * Optional hook invoked after a successful (re)connection.
+   */
+  reset?(): void;
+}
+
+/**
  * Default reconnect policy with exponential back-off and jitter.
  *
  * @example
@@ -15,7 +33,7 @@ export interface ReconnectContext {
  * const delay = policy.nextRetryDelayInMs({ retryCount: 1, elapsedMs: 0 });
  * ```
  */
-export class DefaultReconnectPolicy {
+export class DefaultReconnectPolicy implements ReconnectPolicy {
   private readonly maxRetries: number;
   private readonly baseDelay: number;
   private readonly maxDelay: number;

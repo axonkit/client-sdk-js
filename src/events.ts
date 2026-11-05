@@ -12,6 +12,9 @@ export enum RoomEvent {
   /** Successfully connected to the room. */
   Connected = 'connected',
 
+  /** The signal channel to the server has been established (join accepted). */
+  SignalConnected = 'signalConnected',
+
   /**
    * Disconnected from the room. This may be triggered by the server, by an
    * explicit call to {@link Room.disconnect}, or because of a network failure.
@@ -55,18 +58,26 @@ export enum RoomEvent {
   MediaDevicesError = 'mediaDevicesError',
 
   /**
+   * The active device for a kind has been switched via
+   * {@link Room.switchActiveDevice}.
+   *
+   * args: `(kind: MediaDeviceKind, deviceId: string)`
+   */
+  ActiveDeviceChanged = 'activeDeviceChanged',
+
+  /**
    * A remote participant has joined the room.
    *
    * args: `(participant: RemoteParticipant)`
    */
-  ParticipantJoined = 'participantJoined',
+  ParticipantConnected = 'participantConnected',
 
   /**
    * A remote participant has left the room.
    *
    * args: `(participant: RemoteParticipant, reason?: string)`
    */
-  ParticipantLeft = 'participantLeft',
+  ParticipantDisconnected = 'participantDisconnected',
 
   /**
    * A remote participant's metadata or attributes have been updated.
@@ -192,7 +203,7 @@ export enum RoomEvent {
   ActiveSpeakersChanged = 'activeSpeakersChanged',
 
   /** Room-level metadata has been updated by the server. */
-  RoomUpdated = 'roomUpdated',
+  RoomMetadataChanged = 'roomMetadataChanged',
 
   /**
    * Data received from a remote participant via a DataChannel.
@@ -209,11 +220,25 @@ export enum RoomEvent {
   ConnectionQualityChanged = 'connectionQualityChanged',
 
   /**
+   * The room's recording status has changed.
+   *
+   * args: `(recording: boolean)`
+   */
+  RecordingStatusChanged = 'recordingStatusChanged',
+
+  /**
+   * A participant's permissions have changed.
+   *
+   * args: `(participant: Participant)`
+   */
+  ParticipantPermissionsChanged = 'participantPermissionsChanged',
+
+  /**
    * Audio playback status has changed. When `canPlaybackAudio` becomes
    * `false`, the application should display UI to prompt user interaction,
    * then call {@link Room.startAudio}.
    */
-  AudioPlaybackStatusChanged = 'audioPlaybackStatusChanged',
+  AudioPlaybackStatusChanged = 'audioPlaybackChanged',
 
   /**
    * A message has been received or sent (chat, whiteboard, document, etc.).
@@ -255,7 +280,7 @@ export enum RoomEvent {
    * Video playback status has changed. Similar to
    * {@link RoomEvent.AudioPlaybackStatusChanged} but for video.
    */
-  VideoPlaybackStatusChanged = 'videoPlaybackStatusChanged',
+  VideoPlaybackStatusChanged = 'videoPlaybackChanged',
 
   /**
    * The stream state of a remote track has changed (e.g. the server

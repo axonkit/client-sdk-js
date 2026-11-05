@@ -766,13 +766,6 @@ export class LocalParticipant extends Participant<LocalTrackPublication> {
     await this.rpc.request('message.delete', { id });
   }
 
-  /**
-   * Delete all messages of a given type.
-   */
-  async deleteMessagesByType(type: string): Promise<void> {
-    await this.rpc.request('message.deleteByType', { type });
-  }
-
   // --- Room Shared State ---
 
   /**

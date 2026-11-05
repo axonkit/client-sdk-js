@@ -3,6 +3,7 @@ import type {
   AudioCaptureOptions,
   TrackPublishDefaults,
 } from '../track/options';
+import type { ReconnectPolicy } from './DefaultReconnectPolicy';
 
 // ---------------------------------------------------------------------------
 // Adaptive stream
@@ -50,6 +51,22 @@ export interface RoomOptions {
    * subscribers on the server.
    */
   dynacast?: boolean;
+
+  /**
+   * Custom reconnection policy controlling retry delays after a
+   * connection interruption. See {@link DefaultReconnectPolicy}.
+   *
+   * @defaultValue `new DefaultReconnectPolicy()`
+   */
+  reconnectPolicy?: ReconnectPolicy;
+
+  /**
+   * Automatically disconnect from the room when the page is being
+   * unloaded or frozen (`beforeunload` / `pagehide` / `freeze`).
+   *
+   * @defaultValue `true`
+   */
+  disconnectOnPageLeave?: boolean;
 
   /**
    * Default capture options used when creating camera tracks.

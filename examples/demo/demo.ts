@@ -166,8 +166,8 @@ const appActions = {
 
     startTime = Date.now();
     room
-      .on(RoomEvent.ParticipantJoined, participantConnected)
-      .on(RoomEvent.ParticipantLeft, participantDisconnected)
+      .on(RoomEvent.ParticipantConnected, participantConnected)
+      .on(RoomEvent.ParticipantDisconnected, participantDisconnected)
       .on(RoomEvent.ChatMessage, handleChatMessage)
       .on(RoomEvent.Disconnected, handleRoomDisconnect)
       .on(RoomEvent.Reconnecting, () => appendLog('Reconnecting to room'))

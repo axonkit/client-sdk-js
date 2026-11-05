@@ -61,7 +61,7 @@ import { LocalAudioTrack } from './track/LocalAudioTrack';
 import { LocalTrack } from './track/LocalTrack';
 import { RoomEvent, ParticipantEvent } from './events';
 import { StatsCollector } from './stats/StatsCollector';
-import { DefaultReconnectPolicy } from './room/DefaultReconnectPolicy';
+import { DefaultReconnectPolicy, type ReconnectPolicy } from './room/DefaultReconnectPolicy';
 import { isWeb } from './utils/browser';
 import { DataStreamReceiver } from './data-stream/DataStreamManager';
 import type { Message, RpcInvocationData, TextStreamHandler, ByteStreamHandler } from './types';
@@ -82,8 +82,8 @@ export type RoomEvents = {
   [RoomEvent.SignalReconnecting]: () => void;
   [RoomEvent.MediaDevicesChanged]: () => void;
   [RoomEvent.MediaDevicesError]: (error: Error) => void;
-  [RoomEvent.ParticipantJoined]: (participant: RemoteParticipant) => void;
-  [RoomEvent.ParticipantLeft]: (participant: RemoteParticipant, reason?: string) => void;
+  [RoomEvent.ParticipantConnected]: (participant: RemoteParticipant) => void;
+  [RoomEvent.ParticipantDisconnected]: (participant: RemoteParticipant, reason?: string) => void;
   [RoomEvent.ParticipantUpdated]: (participant: RemoteParticipant) => void;
   [RoomEvent.ParticipantMetadataChanged]: (
     prevMetadata: string | undefined,
@@ -131,7 +131,7 @@ export type RoomEvents = {
   ) => void;
   [RoomEvent.LocalAudioSilenceDetected]: () => void;
   [RoomEvent.ActiveSpeakersChanged]: (speakers: Participant[]) => void;
-  [RoomEvent.RoomUpdated]: (room: RoomInfo) => void;
+  [RoomEvent.RoomMetadataChanged]: (room: RoomInfo) => void;
   [RoomEvent.DataReceived]: (data: ArrayBuffer, participant?: RemoteParticipant) => void;
   [RoomEvent.ConnectionQualityChanged]: (
     quality: ConnectionQuality,
@@ -139,6 +139,10 @@ export type RoomEvents = {
   ) => void;
   [RoomEvent.AudioPlaybackStatusChanged]: (canPlayback: boolean) => void;
   [RoomEvent.VideoPlaybackStatusChanged]: (canPlayback: boolean) => void;
+  [RoomEvent.SignalConnected]: () => void;
+  [RoomEvent.ActiveDeviceChanged]: (kind: MediaDeviceKind, deviceId: string) => void;
+  [RoomEvent.RecordingStatusChanged]: (recording: boolean) => void;
+  [RoomEvent.ParticipantPermissionsChanged]: (participant: Participant) => void;
   [RoomEvent.ChatMessage]: (message: Message, participant?: Participant) => void;
   [RoomEvent.MessageDeleted]: (ids: string[], type?: string) => void;
   [RoomEvent.StateUpdated]: (
@@ -194,7 +198,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   private lastRtt = 0;
 
   private reconnectAttempts = 0;
-  private reconnectPolicy = new DefaultReconnectPolicy();
+  private reconnectPolicy: ReconnectPolicy = new DefaultReconnectPolicy();
 
   private statsCollector?: StatsCollector;
   private pageLeaveHandler?: () => void;
@@ -220,6 +224,9 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._options.publishDefaults = {
       ...options?.publishDefaults,
     };
+    if (options?.reconnectPolicy) {
+      this.reconnectPolicy = options.reconnectPolicy;
+    }
     this.signalClient = new SignalClient();
   }
 
@@ -466,6 +473,7 @@ export class Room extends TypedEmitter<RoomEvents> {
         }
       }
     }
+    this.emit(RoomEvent.ActiveDeviceChanged, kind, deviceId);
   }
 
   // --- Connect ---
@@ -490,7 +498,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       this.startHeartbeat(connectResult.pingInterval, connectResult.pingTimeout);
       this.startStatsCollector(connectResult.statsInterval);
       this.reconnectAttempts = 0;
-      this.reconnectPolicy.reset();
+      this.reconnectPolicy.reset?.();
 
       this.setupDeviceChangeListener();
       this.wireLocalParticipantEvents();
@@ -541,6 +549,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     const joinResponse = resp as JoinResponse;
     this.nodeId = joinResponse.serverInfo.nodeId;
     this.applyJoinResponse(joinResponse);
+    this.emit(RoomEvent.SignalConnected);
 
     await this.transportManager.setup(
       url,
@@ -655,7 +664,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       await this.transportManager.restartIce(resp.iceParameters);
       this.setState(RoomState.Connected);
       this.reconnectAttempts = 0;
-      this.reconnectPolicy.reset();
+      this.reconnectPolicy.reset?.();
       this.emit(RoomEvent.Reconnected);
       log.info('ICE restart completed');
       return;
@@ -727,7 +736,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     this.setState(RoomState.Connected);
     this.reconnectAttempts = 0;
-    this.reconnectPolicy.reset();
+    this.reconnectPolicy.reset?.();
     this.emit(RoomEvent.Reconnected);
     log.info('Reconnected successfully');
   }
@@ -1204,7 +1213,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       readyParticipants.push(rp);
 
       if (emitEvents && !existed) {
-        this.emit(RoomEvent.ParticipantJoined, rp);
+        this.emit(RoomEvent.ParticipantConnected, rp);
         for (const [, pub] of rp.trackPublications) {
           this.emit(RoomEvent.TrackPublished, pub, rp);
         }
@@ -1216,7 +1225,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       rp.closeAll();
       this._remoteParticipants.delete(sid);
       if (emitEvents) {
-        this.emit(RoomEvent.ParticipantLeft, rp);
+        this.emit(RoomEvent.ParticipantDisconnected, rp);
       }
     }
 
@@ -1275,7 +1284,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       for (const { participant, publications } of replayParticipants) {
         if (this._remoteParticipants.get(participant.sid) !== participant) continue;
 
-        this.emit(RoomEvent.ParticipantJoined, participant);
+        this.emit(RoomEvent.ParticipantConnected, participant);
         for (const publication of publications) {
           if (participant.getTrackPublicationBySid(publication.trackSid) !== publication) continue;
 
@@ -1295,7 +1304,7 @@ export class Room extends TypedEmitter<RoomEvents> {
       log.info(`Participant updated via join event: ${rp.identity} (${rp.sid})`);
       return;
     }
-    this.emit(RoomEvent.ParticipantJoined, rp);
+    this.emit(RoomEvent.ParticipantConnected, rp);
     log.info(`Participant joined: ${rp.identity} (${rp.sid})`);
   }
 
@@ -1305,7 +1314,7 @@ export class Room extends TypedEmitter<RoomEvents> {
 
     rp.closeAll();
     this._remoteParticipants.delete(body.participantSid);
-    this.emit(RoomEvent.ParticipantLeft, rp, body.reason);
+    this.emit(RoomEvent.ParticipantDisconnected, rp, body.reason);
     log.info(`Participant left: ${rp.identity} (${rp.sid})`);
   }
 
@@ -1313,7 +1322,7 @@ export class Room extends TypedEmitter<RoomEvents> {
     const existed = this._remoteParticipants.has(body.participant.sid);
     const rp = this.upsertRemoteParticipant(body.participant);
     if (!existed) {
-      this.emit(RoomEvent.ParticipantJoined, rp);
+      this.emit(RoomEvent.ParticipantConnected, rp);
       log.warn(`Participant updated before join event: ${rp.identity} (${rp.sid})`);
       return;
     }
@@ -1434,9 +1443,13 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private handleRoomUpdated(body: RoomUpdatedNotification): void {
+    const wasRecording = this.isRecording;
     this._roomInfo = body.room;
     this._name = body.room.name;
-    this.emit(RoomEvent.RoomUpdated, body.room);
+    this.emit(RoomEvent.RoomMetadataChanged, body.room);
+    if (wasRecording !== this.isRecording) {
+      this.emit(RoomEvent.RecordingStatusChanged, this.isRecording);
+    }
   }
 
   private handleDisconnect(reason: DisconnectReason): void {
@@ -1526,6 +1539,9 @@ export class Room extends TypedEmitter<RoomEvents> {
     rp.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, rp);
     });
+    rp.on(ParticipantEvent.PermissionsChanged, () => {
+      this.emit(RoomEvent.ParticipantPermissionsChanged, rp);
+    });
     rp.on(ParticipantEvent.TrackStreamStateChanged, (pub, streamState) => {
       this.emit(RoomEvent.TrackStreamStateChanged, pub, streamState, rp);
     });
@@ -1556,6 +1572,9 @@ export class Room extends TypedEmitter<RoomEvents> {
     });
     this._localParticipant.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, this._localParticipant);
+    });
+    this._localParticipant.on(ParticipantEvent.PermissionsChanged, () => {
+      this.emit(RoomEvent.ParticipantPermissionsChanged, this._localParticipant);
     });
     this._localParticipant.on(ParticipantEvent.ChatMessage, (msg: Message) => {
       const ts = msg.editTimestamp ?? msg.timestamp;
@@ -1613,7 +1632,7 @@ export class Room extends TypedEmitter<RoomEvents> {
   }
 
   private setupPageLeaveHandler(): void {
-    if (!isWeb()) return;
+    if (!isWeb() || this._options.disconnectOnPageLeave === false) return;
 
     this.pageLeaveHandler = () => {
       this.disconnect();
