@@ -19,7 +19,7 @@ export enum RoomEvent {
    * Disconnected from the room. This may be triggered by the server, by an
    * explicit call to {@link Room.disconnect}, or because of a network failure.
    *
-   * args: `(reason?: DisconnectReason)`
+   * args: `(reason?: {@link DisconnectReason})`
    */
   Disconnected = 'disconnected',
 
@@ -68,70 +68,70 @@ export enum RoomEvent {
   /**
    * A remote participant has joined the room.
    *
-   * args: `(participant: RemoteParticipant)`
+   * args: `(participant: {@link RemoteParticipant})`
    */
   ParticipantConnected = 'participantConnected',
 
   /**
    * A remote participant has left the room.
    *
-   * args: `(participant: RemoteParticipant, reason?: DisconnectReason)`
+   * args: `(participant: {@link RemoteParticipant}, reason?: {@link DisconnectReason})`
    */
   ParticipantDisconnected = 'participantDisconnected',
 
   /**
    * A remote participant's metadata or attributes have been updated.
    *
-   * args: `(participant: RemoteParticipant)`
+   * args: `(participant: {@link RemoteParticipant})`
    */
   ParticipantUpdated = 'participantUpdated',
 
   /**
    * Participant metadata has changed.
    *
-   * args: `(prevMetadata: string | undefined, participant: Participant)`
+   * args: `(prevMetadata: string | undefined, participant: {@link Participant})`
    */
   ParticipantMetadataChanged = 'participantMetadataChanged',
 
   /**
    * Participant's display name has changed.
    *
-   * args: `(name: string, participant: Participant)`
+   * args: `(name: string, participant: {@link Participant})`
    */
   ParticipantNameChanged = 'participantNameChanged',
 
   /**
    * Participant attributes have changed.
    *
-   * args: `(changedAttributes: Record<string, string>, participant: Participant)`
+   * args: `(changedAttributes: Record<string, string>, participant: {@link Participant})`
    */
   ParticipantAttributesChanged = 'participantAttributesChanged',
 
   /**
    * A remote participant has published a new track.
    *
-   * args: `(publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(publication: {@link RemoteTrackPublication}, participant: {@link RemoteParticipant})`
    */
   TrackPublished = 'trackPublished',
 
   /**
    * A remote participant has unpublished a track.
    *
-   * args: `(publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(publication: {@link RemoteTrackPublication}, participant: {@link RemoteParticipant})`
    */
   TrackUnpublished = 'trackUnpublished',
 
   /**
    * A remote participant has published a new data track.
    *
-   * args: `(dataTrack: DataTrackInfo, participant: RemoteParticipant)`
+   * args: `(dataTrack: {@link DataTrackInfo}, participant: {@link RemoteParticipant})`
    */
   DataTrackPublished = 'dataTrackPublished',
 
   /**
    * A remote participant has unpublished a data track.
    *
-   * args: `(dataTrackSid: string, participant: RemoteParticipant)`
+   * args: `(dataTrackSid: string, participant: {@link RemoteParticipant})`
    */
   DataTrackUnpublished = 'dataTrackUnpublished',
 
@@ -139,14 +139,14 @@ export enum RoomEvent {
    * Subscribed to a new track from a remote participant. This is the event
    * where you would typically attach the track to a media element.
    *
-   * args: `(track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(track: {@link RemoteTrack}, publication: {@link RemoteTrackPublication}, participant: {@link RemoteParticipant})`
    */
   TrackSubscribed = 'trackSubscribed',
 
   /**
    * Could not subscribe to a track.
    *
-   * args: `(trackSid: string, participant: RemoteParticipant)`
+   * args: `(trackSid: string, participant: {@link RemoteParticipant})`
    */
   TrackSubscriptionFailed = 'trackSubscriptionFailed',
 
@@ -154,28 +154,28 @@ export enum RoomEvent {
    * Unsubscribed from a remote track. The track should be detached from any
    * media elements at this point.
    *
-   * args: `(track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant)`
+   * args: `(track: {@link RemoteTrack}, publication: {@link RemoteTrackPublication}, participant: {@link RemoteParticipant})`
    */
   TrackUnsubscribed = 'trackUnsubscribed',
 
   /**
    * A track has been muted. Fires on both remote and local participants.
    *
-   * args: `(publication: TrackPublication, participant: Participant)`
+   * args: `(publication: {@link TrackPublication}, participant: {@link Participant})`
    */
   TrackMuted = 'trackMuted',
 
   /**
    * A track has been unmuted. Fires on both remote and local participants.
    *
-   * args: `(publication: TrackPublication, participant: Participant)`
+   * args: `(publication: {@link TrackPublication}, participant: {@link Participant})`
    */
   TrackUnmuted = 'trackUnmuted',
 
   /**
    * A local track was published successfully.
    *
-   * args: `(publication: LocalTrackPublication, participant: LocalParticipant)`
+   * args: `(publication: {@link LocalTrackPublication}, participant: {@link LocalParticipant})`
    */
   LocalTrackPublished = 'localTrackPublished',
 
@@ -183,7 +183,7 @@ export enum RoomEvent {
    * A local track was unpublished. When a user stops sharing their screen
    * by pressing "End" on the browser UI, this event will also fire.
    *
-   * args: `(publication: LocalTrackPublication, participant: LocalParticipant)`
+   * args: `(publication: {@link LocalTrackPublication}, participant: {@link LocalParticipant})`
    */
   LocalTrackUnpublished = 'localTrackUnpublished',
 
@@ -198,7 +198,7 @@ export enum RoomEvent {
    * Active speakers changed. List of speakers ordered by audio level.
    * Includes the local participant.
    *
-   * args: `(speakers: ActiveSpeaker[])`
+   * args: `(speakers: {@link ActiveSpeaker}[])`
    */
   ActiveSpeakersChanged = 'activeSpeakersChanged',
 
@@ -208,14 +208,14 @@ export enum RoomEvent {
   /**
    * Data received from a remote participant via a DataChannel.
    *
-   * args: `(data: ArrayBuffer, participant?: RemoteParticipant)`
+   * args: `(data: ArrayBuffer, participant?: {@link RemoteParticipant})`
    */
   DataReceived = 'dataReceived',
 
   /**
    * The connection quality of a participant has changed.
    *
-   * args: `(quality: ConnectionQuality, participant: Participant)`
+   * args: `(quality: {@link ConnectionQuality}, participant: {@link Participant})`
    */
   ConnectionQualityChanged = 'connectionQualityChanged',
 
@@ -229,7 +229,7 @@ export enum RoomEvent {
   /**
    * A participant's permissions have changed.
    *
-   * args: `(participant: Participant)`
+   * args: `(prevPermissions: ParticipantPermission | undefined, participant: {@link Participant})`
    */
   ParticipantPermissionsChanged = 'participantPermissionsChanged',
 
@@ -243,7 +243,7 @@ export enum RoomEvent {
   /**
    * A message has been received or sent (chat, whiteboard, document, etc.).
    *
-   * args: `(message: Message, participant?: Participant)`
+   * args: `(message: {@link Message}, participant?: {@link Participant})`
    */
   ChatMessage = 'chatMessage',
 
@@ -287,21 +287,21 @@ export enum RoomEvent {
    * paused or resumed forwarding media).  This is distinct from
    * {@link RoomEvent.TrackMuted} which indicates the publisher's intent.
    *
-   * args: `(publication: RemoteTrackPublication, streamState: StreamState, participant: RemoteParticipant)`
+   * args: `(publication: {@link RemoteTrackPublication}, streamState: {@link StreamState}, participant: {@link RemoteParticipant})`
    */
   TrackStreamStateChanged = 'trackStreamStateChanged',
 
   /**
    * A new group (breakout room) has been created.
    *
-   * args: `(group: GroupInfo)`
+   * args: `(group: {@link GroupInfo})`
    */
   GroupCreated = 'groupCreated',
 
   /**
    * A group's metadata or participant count has changed.
    *
-   * args: `(group: GroupInfo)`
+   * args: `(group: {@link GroupInfo})`
    */
   GroupUpdated = 'groupUpdated',
 
@@ -316,14 +316,14 @@ export enum RoomEvent {
   /**
    * A participant has joined a group.
    *
-   * args: `(groupId: string, participant: RemoteParticipant | LocalParticipant)`
+   * args: `(groupId: string, participant: {@link RemoteParticipant} | {@link LocalParticipant})`
    */
   GroupParticipantJoined = 'groupParticipantJoined',
 
   /**
    * A participant has left a group (returned to the main room).
    *
-   * args: `(groupId: string, participant: RemoteParticipant | LocalParticipant)`
+   * args: `(groupId: string, participant: {@link RemoteParticipant} | {@link LocalParticipant})`
    */
   GroupParticipantLeft = 'groupParticipantLeft',
 }
@@ -342,14 +342,14 @@ export enum ParticipantEvent {
   /**
    * The participant has published a new track.
    *
-   * args: `(publication: TrackPublication)`
+   * args: `(publication: {@link TrackPublication})`
    */
   TrackPublished = 'trackPublished',
 
   /**
    * The participant has unpublished a track.
    *
-   * args: `(publication: TrackPublication)`
+   * args: `(publication: {@link TrackPublication})`
    */
   TrackUnpublished = 'trackUnpublished',
 
@@ -362,28 +362,28 @@ export enum ParticipantEvent {
   /**
    * Subscribed to a new track from this participant.
    *
-   * args: `(track: RemoteTrack, publication: RemoteTrackPublication)`
+   * args: `(track: {@link RemoteTrack}, publication: {@link RemoteTrackPublication})`
    */
   TrackSubscribed = 'trackSubscribed',
 
   /**
    * Unsubscribed from a track of this participant.
    *
-   * args: `(track: RemoteTrack, publication: RemoteTrackPublication)`
+   * args: `(track: {@link RemoteTrack}, publication: {@link RemoteTrackPublication})`
    */
   TrackUnsubscribed = 'trackUnsubscribed',
 
   /**
    * A local track was published by this participant.
    *
-   * args: `(publication: LocalTrackPublication)`
+   * args: `(publication: {@link LocalTrackPublication})`
    */
   LocalTrackPublished = 'localTrackPublished',
 
   /**
    * A local track was unpublished by this participant.
    *
-   * args: `(publication: LocalTrackPublication)`
+   * args: `(publication: {@link LocalTrackPublication})`
    */
   LocalTrackUnpublished = 'localTrackUnpublished',
 
@@ -396,7 +396,7 @@ export enum ParticipantEvent {
   /**
    * The participant's attributes have changed.
    *
-   * args: `(changedAttributes: Record<string, string>, participant: Participant)`
+   * args: `(changedAttributes: Record<string, string>, participant: {@link Participant})`
    */
   AttributesChanged = 'attributesChanged',
 
@@ -412,7 +412,7 @@ export enum ParticipantEvent {
   /**
    * The stream state of a remote track changed (server paused/resumed forwarding).
    *
-   * args: `(publication: RemoteTrackPublication, streamState: StreamState)`
+   * args: `(publication: {@link RemoteTrackPublication}, streamState: {@link StreamState})`
    */
   TrackStreamStateChanged = 'trackStreamStateChanged',
 
@@ -422,7 +422,7 @@ export enum ParticipantEvent {
   /**
    * A chat message from this participant.
    *
-   * args: `(message: ChatMessage)`
+   * args: `(message: {@link ChatMessage})`
    */
   ChatMessage = 'chatMessage',
 }
@@ -491,14 +491,14 @@ export enum TrackEvent {
   /**
    * The visibility of the video element changed (adaptive stream).
    *
-   * args: `(visible: boolean, track: RemoteVideoTrack)`
+   * args: `(visible: boolean, track: {@link RemoteVideoTrack})`
    */
   VisibilityChanged = 'visibilityChanged',
 
   /**
    * The dimensions of the video element changed (adaptive stream).
    *
-   * args: `(dimensions: { width: number; height: number }, track: RemoteVideoTrack)`
+   * args: `(dimensions: { width: number; height: number }, track: {@link RemoteVideoTrack})`
    */
   VideoDimensionsChanged = 'videoDimensionsChanged',
 
@@ -521,7 +521,7 @@ export enum TrackEvent {
    * The stream state of this track changed (server paused/resumed forwarding).
    * Only emitted on remote tracks.
    *
-   * args: `(track: Track, streamState: StreamState)`
+   * args: `(track: {@link Track}, streamState: {@link StreamState})`
    */
   StreamStateChanged = 'streamStateChanged',
 

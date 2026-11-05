@@ -145,7 +145,10 @@ export type RoomEvents = {
   [RoomEvent.SignalConnected]: () => void;
   [RoomEvent.ActiveDeviceChanged]: (kind: MediaDeviceKind, deviceId: string) => void;
   [RoomEvent.RecordingStatusChanged]: (recording: boolean) => void;
-  [RoomEvent.ParticipantPermissionsChanged]: (participant: Participant) => void;
+  [RoomEvent.ParticipantPermissionsChanged]: (
+    prevPermissions: import('./protocol/types').ParticipantPermission | undefined,
+    participant: Participant,
+  ) => void;
   [RoomEvent.ChatMessage]: (message: Message, participant?: Participant) => void;
   [RoomEvent.MessageDeleted]: (ids: string[], type?: string) => void;
   [RoomEvent.StateUpdated]: (
@@ -1542,8 +1545,8 @@ export class Room extends TypedEmitter<RoomEvents> {
     rp.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, rp);
     });
-    rp.on(ParticipantEvent.PermissionsChanged, () => {
-      this.emit(RoomEvent.ParticipantPermissionsChanged, rp);
+    rp.on(ParticipantEvent.PermissionsChanged, (prevPermissions) => {
+      this.emit(RoomEvent.ParticipantPermissionsChanged, prevPermissions, rp);
     });
     rp.on(ParticipantEvent.TrackStreamStateChanged, (pub, streamState) => {
       this.emit(RoomEvent.TrackStreamStateChanged, pub, streamState, rp);
@@ -1576,8 +1579,8 @@ export class Room extends TypedEmitter<RoomEvents> {
     this._localParticipant.on(ParticipantEvent.TrackUnmuted, (pub) => {
       this.emit(RoomEvent.TrackUnmuted, pub, this._localParticipant);
     });
-    this._localParticipant.on(ParticipantEvent.PermissionsChanged, () => {
-      this.emit(RoomEvent.ParticipantPermissionsChanged, this._localParticipant);
+    this._localParticipant.on(ParticipantEvent.PermissionsChanged, (prevPermissions) => {
+      this.emit(RoomEvent.ParticipantPermissionsChanged, prevPermissions, this._localParticipant);
     });
     this._localParticipant.on(ParticipantEvent.ChatMessage, (msg: Message) => {
       const ts = msg.editTimestamp ?? msg.timestamp;
