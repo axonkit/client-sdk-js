@@ -69,7 +69,9 @@ export interface RoomOptions {
 
   /**
    * Room name sent in the JoinRequest for server-side routing and room
-   * creation. Must match the `room` claim in the JWT token (if present).
+   * creation. Optional when the JWT token carries a `room` claim — the
+   * server falls back to it. Required for anonymous joins (no token).
+   * When both are present they must match.
    */
   roomName?: string;
 
