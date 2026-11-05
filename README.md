@@ -141,6 +141,4 @@ Open `examples/demo/index.html` in a browser after building. Requires a running 
 
 ## License
 
-This SDK is proprietary software licensed exclusively for use with the AxonKit
-Service. See [LICENSE](./LICENSE) for the full terms. For commercial inquiries,
-contact <jiyeyuran@gmail.com>.
+Licensed under the [Apache License, Version 2.0](./LICENSE).

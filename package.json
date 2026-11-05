@@ -31,7 +31,7 @@
     "realtime"
   ],
   "type": "module",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "author": "axonkit",
   "repository": {
     "type": "git",
