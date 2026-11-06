@@ -5,7 +5,8 @@
 <p align="center">
   <strong>AxonKit JavaScript/TypeScript client SDK</strong> for real-time communication,<br/>
   built on <a href="https://github.com/versatica/mediasoup-client">mediasoup-client</a> with a
-  <a href="https://livekit.io">LiveKit</a>-compatible API surface.
+  <a href="https://livekit.io">LiveKit</a>-compatible API surface.<br/>
+  Documentation at <a href="https://axonkit.io">axonkit.io</a>
 </p>
 
 <p align="center">
